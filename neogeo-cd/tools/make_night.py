@@ -32,6 +32,7 @@ PICTS = [
     ('lake/water.png',      'cc_water',      'water'),
     ('beach/sky_sea.png',   'cc_sky_sea',    'sky'),
     ('beach/shore.png',     'cc_shore',      'near'),
+    ('beach/wave.png',      'cc_wave',       'near'),
     ('beach/palm.png',      'cc_palm',       'silhouette'),
     ('beach/umbrella.png',  'cc_umbrella',   'silhouette'),
     ('window/city.png',     'cc_city',       'city'),

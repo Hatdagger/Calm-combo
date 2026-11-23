@@ -90,7 +90,7 @@ static DWORD  acc_mid, acc_near;
 static DWORD  rng = 0x2545f491UL;
 
 /* layer indices in the current scene */
-static BYTE   L_sun, L_moon, L_mid, L_near, L_water, L_fly0, L_glit, L_shore, L_palm, L_umb,
+static BYTE   L_sun, L_moon, L_mid, L_near, L_water, L_fly0, L_glit, L_shore, L_wave, L_palm, L_umb,
               L_city, L_rain, L_drop0, L_steam;
 #define N_FLIES 6
 #define N_DROPS 6
@@ -100,6 +100,13 @@ static const signed char SIN32[32] = {
     0, 25, 49, 71, 90, 106, 117, 125, 127, 125, 117, 106, 90, 71, 49, 25,
     0, -25, -49, -71, -90, -106, -117, -125, -127, -125, -117, -106, -90, -71, -49, -25
 };
+
+/* sine of p (0..255 is one turn), -127..127, smoothed between table steps */
+static short sin256(WORD p)
+{
+    short a = SIN32[(p >> 3) & 31], b = SIN32[((p >> 3) + 1) & 31];
+    return (short)(a + (((b - a) * (short)(p & 7)) >> 3));
+}
 
 static WORD rnd(WORD n)
 {
@@ -395,7 +402,7 @@ static void build(BYTE s)
     for (k = 0; k < SPR_SCENE_N; k++) SC234Put(VRAM_POSY_ADDR(SPR_SCENE + k), S_POSY(224, 0));
     budget -= SPR_SCENE_N;
     nlay = 0; nreg = 0; npals = 0; nready = 0; next_spr = SPR_SCENE;
-    L_sun = L_moon = L_mid = L_near = L_water = L_fly0 = L_glit = L_shore = L_palm = L_umb =
+    L_sun = L_moon = L_mid = L_near = L_water = L_fly0 = L_glit = L_shore = L_wave = L_palm = L_umb =
         L_city = L_rain = L_drop0 = L_steam = 0xff;
     cur = s;
 
@@ -416,6 +423,7 @@ static void build(BYTE s)
         L_moon = layer_new(&cc_moon, M_GLOW, 0, 0, 2, 2, 2, 0);
         L_glit = layer_new(&cc_glitter, M_GLOW, 0, 120, 4, 4, 1, 0);
         L_shore = layer_new(&cc_shore, M_TINT, 0, 176, 20, 20, 3, 0);
+        L_wave = layer_new(&cc_wave, M_TINT, 0, 176, 20, 20, 2, 0);
         L_palm = layer_new(&cc_palm, M_TINT, 240, 32, 5, 5, 12, 0);
         L_umb  = layer_new(&cc_umbrella, M_TINT, 0, 0, 10, 10, 3, 0);
         break;
@@ -424,7 +432,7 @@ static void build(BYTE s)
         L_moon = layer_new(&cc_moon, M_GLOW, 0, 0, 2, 2, 2, 0);
         L_city = layer_new(&cc_city, M_LIGHTS, 0, 64, 20, 20, 8, 0);
         L_rain = layer_new(&cc_rain, M_TINT, 0, -64, 20, 4, 18, 4);   /* 288 px tall, slides down */
-        L_drop0 = layer_new(&cc_droplet, M_TINT, 0, 0, 1, 1, 2, 0);
+        L_drop0 = layer_new(&cc_droplet, M_TINT, 0, 0, 1, 1, 2, 0);   /* one frame: it slides */
         for (k = 1; k < N_DROPS; k++) layer_new(&cc_droplet, M_TINT, 0, 0, 1, 1, 2, 0);
         for (k = 0; k < N_DROPS; k++) drop_y[k] = (short)(8 + rnd(180));
         layer_new(&cc_frame, M_TINT, 0, 0, 20, 20, 14, 0);
@@ -443,7 +451,6 @@ static void arc(Layer *l, WORD t, short ytop, short yhor)
 
 static void animate(DWORD frames, WORD u)
 {
-    static const BYTE PALM[6] = { 0, 1, 2, 3, 2, 1 };
     static const short FX[N_FLIES] = { 40, 92, 150, 204, 252, 292 };
     static const short FY[N_FLIES] = { 140, 172, 152, 186, 136, 166 };
     static const short DX[N_DROPS] = { 52, 104, 190, 232, 140, 276 };
@@ -464,20 +471,22 @@ static void animate(DWORD frames, WORD u)
         acc_mid += 10; acc_near += 26;              /* 1 and 2.6 pixels per second */
         lay[L_mid].scroll  = (short)((acc_mid / 600) & 511);
         lay[L_near].scroll = (short)((acc_near / 600) & 511);
-        lay[L_water].frame = (BYTE)((frames / 12) & 3);
+        lay[L_water].frame = (BYTE)((frames / 6) & 15);      /* 16-frame shimmer loop */
         for (k = 0; k < N_FLIES; k++) {
             Layer *f = &lay[L_fly0 + k];
             f->shown = (BYTE)(n > 200);
             f->x = (short)(FX[k] + ((SIN32[(t + k * 9) & 31] * 12) >> 7));
             f->y = (short)(FY[k] + ((SIN32[(t * 2 + k * 5 + 8) & 31] * 6) >> 7));
-            f->frame = (BYTE)(((frames >> 3) + k) & 3);
+            f->frame = (BYTE)(((frames / 5) + k * 3) & 7);  /* slow glow pulse */
         }
         break;
     case SCENE_BEACH:
-        lay[L_shore].frame = (BYTE)(((frames % 540) * 8) / 540);   /* one wave every 9 s */
-        lay[L_palm].frame = PALM[(frames / 20) % 6];
-        lay[L_umb].frame = (BYTE)((frames / 7) & 3);
-        lay[L_glit].frame = (BYTE)((frames / 6) & 3);
+        /* one swell every 9 s, a pixel at a time (in step with the beach song) */
+        lay[L_wave].y = (short)(176 + ((127 + sin256((WORD)(((frames % 540) * 256L) / 540))) * 14) / 254);
+        lay[L_wave].frame = (BYTE)((frames >> 3) & 3);       /* foam ripple */
+        lay[L_palm].frame = (BYTE)((frames >> 3) & 15);      /* one smooth sway */
+        lay[L_umb].frame = (BYTE)((frames >> 2) & 7);
+        lay[L_glit].frame = (BYTE)((frames >> 2) & 7);
         lay[L_glit].x = (short)((u < 512 ? sun->x : moon->x) - 16);
         lay[L_glit].shown = (BYTE)((u < 512 ? sun->y : moon->y) < yhor - 6);
         break;
@@ -485,14 +494,13 @@ static void animate(DWORD frames, WORD u)
         /* the rain block tiles seamlessly, so falling rain is just the layer
            sliding down 3 px a frame and jumping back up every 64 px */
         lay[L_rain].y = (short)(((frames * 3) & 63) - 64);
-        lay[L_steam].frame = (BYTE)((frames >> 3) & 3);
+        lay[L_steam].frame = (BYTE)((frames / 6) & 7);
         for (k = 0; k < N_DROPS; k++) {
             Layer *d = &lay[L_drop0 + k];
             if ((frames % (3 + k % 3)) == 0) drop_y[k]++;
             if (drop_y[k] > 196) { drop_y[k] = 4; d->x = (short)(16 + rnd(288)); }
             else if (!d->x) d->x = DX[k];
             d->y = drop_y[k];
-            d->frame = (BYTE)(((frames >> 4) + k) & 3);
         }
         break;
     }

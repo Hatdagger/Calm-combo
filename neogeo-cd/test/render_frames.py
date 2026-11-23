@@ -29,7 +29,8 @@ FILES = {1: ('logo.png', 2), 2: ('board/tiles.png', 7), 3: ('board/cursor.png', 
          11: ('lake/firefly.png', 1), 12: ('beach/sky_sea.png', 12), 13: ('beach/glitter.png', 1),
          14: ('beach/shore.png', 3), 15: ('beach/palm.png', 12), 16: ('beach/umbrella.png', 3),
          17: ('window/city.png', 8), 18: ('window/rain.png', 4), 19: ('window/droplet.png', 2),
-         20: ('window/frame.png', 14), 21: ('window/steam.png', 2)}
+         20: ('window/frame.png', 14), 21: ('window/steam.png', 2),
+         22: ('beach/wave.png', 2)}
 ART = {k: load(f) for k, (f, h) in FILES.items()}
 # hand-painted night copies (tools/make_night.py turns them into colour tables)
 NIGHT = {k: load(f[:-4] + '_night.png') for k, (f, h) in FILES.items()

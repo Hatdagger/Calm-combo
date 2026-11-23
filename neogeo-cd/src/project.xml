@@ -62,6 +62,9 @@
         <pict id="cc_shore">
           <file>assets\gfx\beach\shore.png</file>
         </pict>
+        <pict id="cc_wave">
+          <file>assets\gfx\beach\wave.png</file>
+        </pict>
         <pict id="cc_palm">
           <file>assets\gfx\beach\palm.png</file>
         </pict>

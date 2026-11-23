@@ -207,10 +207,12 @@ def make_lake():
         for x in range(512):
             d.line([(x, int(f(x))), (x, h - 1)], fill=col)
         save(im, 'gfx/lake/%s.png' % name)
-    im = canvas(1280, 64); d = ImageDraw.Draw(im)
+    WF = 16                     # frames, shown 6 video frames each: a 1.6 s loop
+    im = canvas(320 * WF, 64); d = ImageDraw.Draw(im)
     rnd = random.Random(7)
-    for fr in range(4):
+    for fr in range(WF):
         x0 = fr * 320
+        ph = 2 * math.pi * fr / WF
         vgrad(d, x0, 0, x0 + 320, 64, (111, 106, 163), (12, 10, 28), band=8)
         refl = ridge(1.3, 30, 150, 320)
         for x in range(320):
@@ -218,17 +220,23 @@ def make_lake():
             if dep > 0:
                 d.line([(x0 + x, 0), (x0 + x, dep)], fill=(92, 80, 136))
         for k in range(14):
+            # each glint drifts and stretches on its own slow loop, so the
+            # last frame leads straight back into the first
             y = 6 + (k * 17) % 56
-            xx = (k * 53 + fr * 6) % 320
-            d.line([(x0 + xx, y), (x0 + min(319, xx + 8 + (k % 3) * 4), y)], fill=(150, 146, 196))
+            xx = int(k * 53 + 5 * math.sin(ph + k * 1.1)) % 320
+            ln = int(8 + (k % 3) * 4 + 3 * math.sin(ph * 2 + k))
+            d.line([(x0 + xx, y), (x0 + min(319, xx + ln), y)], fill=(150, 146, 196))
     save(im, 'gfx/lake/water.png')
-    im = canvas(64, 16); d = ImageDraw.Draw(im)
-    for fr, r in enumerate([0, 1, 2, 1]):
+    glow = [0, 1, 2, 3, 3, 2, 1, 0]   # 8 frames: a slow pulse
+    im = canvas(16 * len(glow), 16); d = ImageDraw.Draw(im)
+    for fr, r in enumerate(glow):
         cx = fr * 16 + 8
-        if r >= 2:
+        if r >= 3:
             d.ellipse([cx - 3, 5, cx + 2, 10], fill=(120, 112, 40))
+        if r >= 2:
+            d.ellipse([cx - 2, 6, cx + 1, 9], fill=(170, 160, 70))
         if r >= 1:
-            d.rectangle([cx - 1, 7, cx, 8], fill=(200, 192, 96))
+            d.rectangle([cx - 1, 7, cx, 8], fill=(220, 210, 110))
         d.point((cx, 8), fill=(255, 243, 166))
     save(im, 'gfx/lake/firefly.png')
 
@@ -242,29 +250,36 @@ def make_beach():
         xx = (k * 61) % 340 - 20
         d.line([(max(0, xx), y), (min(319, xx + 10 + k), y)], fill=(210, 236, 240))
     save(im, 'gfx/beach/sky_sea.png')
-    im = canvas(256, 16); d = ImageDraw.Draw(im)
-    for fr in range(4):
+    GF = 8
+    im = canvas(64 * GF, 16); d = ImageDraw.Draw(im)
+    for fr in range(GF):
         x0 = fr * 64
         for k in range(4):
-            w = int(10 + 6 * math.sin(fr * 1.3 + k * 1.7))
+            w = int(10 + 6 * math.sin(2 * math.pi * fr / GF + k * 1.7))
             d.line([(x0 + 32 - w // 2, 2 + k * 4), (x0 + 32 + w // 2, 2 + k * 4)], fill=(255, 247, 218))
     save(im, 'gfx/beach/glitter.png')
-    im = canvas(2560, 48); d = ImageDraw.Draw(im)
-    for fr in range(8):
+    # the sand (still) and the wave (its own layer, slid up and down a pixel
+    # at a time by the game, one swell every 9 s in step with the music)
+    im = canvas(320, 48); d = ImageDraw.Draw(im)
+    d.rectangle([0, 12, 319, 47], fill=(236, 213, 166))
+    d.rectangle([0, 12, 319, 33], fill=(201, 174, 128))
+    d.rectangle([0, 0, 319, 15], fill=(130, 200, 212))
+    save(im, 'gfx/beach/shore.png')
+    WV = 4                      # foam ripple frames, shown 8 video frames each
+    im = canvas(320 * WV, 32); d = ImageDraw.Draw(im)
+    for fr in range(WV):
         x0 = fr * 320
-        wp = .5 + .5 * math.sin(2 * math.pi * fr / 8)
-        edge = 16 + wp * 14
-        d.rectangle([x0, 12, x0 + 319, 47], fill=(236, 213, 166))
-        d.rectangle([x0, 12, x0 + 319, 33], fill=(201, 174, 128))
         for x in range(320):
-            y = int(edge + math.sin(x * .05 + fr * .6) * 2)
+            y = int(16 + math.sin(x * .05 + 2 * math.pi * fr / WV) * 2)
             d.line([(x0 + x, 0), (x0 + x, y)], fill=(130, 200, 212))
             d.line([(x0 + x, y), (x0 + x, y + 1)], fill=(248, 248, 248))
-    save(im, 'gfx/beach/shore.png')
-    im = canvas(320, 192); d = ImageDraw.Draw(im)
-    for fr in range(4):
+    save(im, 'gfx/beach/wave.png')
+    PF = 16                     # one smooth sway, shown 8 video frames each
+    im = canvas(80 * PF, 192); d = ImageDraw.Draw(im)
+    for fr in range(PF):
         x0 = fr * 80
-        sway = math.sin(fr * math.pi / 2) * 3
+        ph = 2 * math.pi * fr / PF
+        sway = math.sin(ph) * 3
         pts = []
         for i in range(13):
             s = i / 12
@@ -273,7 +288,7 @@ def make_beach():
             d.line([pts[i], pts[i + 1]], fill=(122, 90, 58), width=max(2, int(7 - i * .35)))
         cx, cy = pts[12]
         for k, a0 in enumerate([-2.9, -2.3, -1.7, -1.1, -.5, .1]):
-            a = a0 + math.sin(fr * math.pi / 2 + k) * .07
+            a = a0 + math.sin(ph + k) * .07
             x, y, ang = cx, cy, a
             for s in range(10):
                 nx, ny = x + math.cos(ang) * 5, y + math.sin(ang) * 5
@@ -287,10 +302,11 @@ def make_beach():
                 ang += (1 if math.cos(a) > 0 else -1) * .09 + .04
         d.ellipse([cx - 5, cy, cx + 1, cy + 6], fill=(90, 63, 42))
     save(im, 'gfx/beach/palm.png')
-    im = canvas(640, 48); d = ImageDraw.Draw(im)
-    for fr in range(4):
+    UF = 8
+    im = canvas(160 * UF, 48); d = ImageDraw.Draw(im)
+    for fr in range(UF):
         x0 = fr * 160
-        flap = math.sin(fr * math.pi / 2) * 1.5
+        flap = math.sin(2 * math.pi * fr / UF) * 1.5
         for i in range(9):
             xa, xb = -10 + i * 18, 8 + i * 18
             ya = 34 - xa * .16 + flap * (1 if i % 2 else -1) * .5
@@ -330,12 +346,11 @@ def make_window():
                 px, py = (sx - k // 3) % 64, (y - k) % 64
                 d.point((fr * 64 + px, py), fill=(200, 215, 240))
     save(im, 'gfx/window/rain.png')
-    im = canvas(64, 32); d = ImageDraw.Draw(im)
-    for fr in range(4):
-        x0, y = fr * 16, 8 + fr * 5
-        d.line([(x0 + 7, y - 8), (x0 + 7, y - 2)], fill=(120, 132, 160))
-        d.ellipse([x0 + 5, y - 2, x0 + 9, y + 2], fill=(220, 228, 248))
-        d.point((x0 + 6, y - 1), fill=(255, 255, 255))
+    im = canvas(16, 32); d = ImageDraw.Draw(im)   # one frame: the game slides it down
+    y = 20
+    d.line([(7, y - 12), (7, y - 2)], fill=(120, 132, 160))
+    d.ellipse([5, y - 2, 9, y + 2], fill=(220, 228, 248))
+    d.point((6, y - 1), fill=(255, 255, 255))
     save(im, 'gfx/window/droplet.png')
     im = canvas(320, 224); d = ImageDraw.Draw(im)
     wood, woodl = (106, 74, 54), (138, 100, 72)
@@ -348,10 +363,11 @@ def make_window():
         cx = 291 + (k - 2) * 3
         d.ellipse([cx - 2, 176 - abs(k - 2) * 2, cx + 2, 188 - abs(k - 2) * 2], fill=(90, 163, 106))
     save(im, 'gfx/window/frame.png')
-    im = canvas(64, 32); d = ImageDraw.Draw(im)
-    for fr in range(4):
+    SF = 8
+    im = canvas(16 * SF, 32); d = ImageDraw.Draw(im)
+    for fr in range(SF):
         for k in range(2):
-            pts = [(fr * 16 + 5 + k * 5 + math.sin(fr * 1.5 + s * .6 + k) * 2, 30 - s * 2.6) for s in range(11)]
+            pts = [(fr * 16 + 5 + k * 5 + math.sin(2 * math.pi * fr / SF - s * .6 + k) * 2, 30 - s * 2.6) for s in range(11)]
             d.line(pts, fill=(216, 216, 224))
     save(im, 'gfx/window/steam.png')
 

@@ -30,7 +30,10 @@ static const WORD NM_cc_sky_sea[] = {
     0x67be, 0x2595, 0x6bde, 0x2595,
 };
 static const WORD NM_cc_shore[] = {
-    0x433a, 0x1930, 0x66d0, 0x1d0e, 0x7b75, 0x2151, 0x7fff, 0x2574,
+    0x433a, 0x1930, 0x66d0, 0x1d0e, 0x7b75, 0x2151,
+};
+static const WORD NM_cc_wave[] = {
+    0x433a, 0x1930, 0x7fff, 0x2574,
 };
 static const WORD NM_cc_palm[] = {
     0x224b, 0x0c87, 0x2d05, 0x0865, 0x3d67, 0x0c66,
@@ -55,14 +58,15 @@ static const WORD NM_cc_steam[] = {
     0x6f7c, 0x4dc8,
 };
 
-#define N_NIGHT_MAPS 13
+#define N_NIGHT_MAPS 14
 static const NightMap NIGHT_MAPS[] = {
     { &cc_lake_sky, NM_cc_lake_sky, 19 },
     { &cc_ridge_mid, NM_cc_ridge_mid, 1 },
     { &cc_ridge_near, NM_cc_ridge_near, 1 },
     { &cc_water, NM_cc_water, 10 },
     { &cc_sky_sea, NM_cc_sky_sea, 26 },
-    { &cc_shore, NM_cc_shore, 4 },
+    { &cc_shore, NM_cc_shore, 3 },
+    { &cc_wave, NM_cc_wave, 2 },
     { &cc_palm, NM_cc_palm, 3 },
     { &cc_umbrella, NM_cc_umbrella, 3 },
     { &cc_city, NM_cc_city, 3 },

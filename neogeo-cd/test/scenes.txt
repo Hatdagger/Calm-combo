@@ -34,4 +34,8 @@ p1 A
 clock 1560
 wait 90
 dump n09_versus_window_night
+# two boards over the beach (the wave is its own layer there)
+clock 330
+wait 90
+dump n10_versus_beach_night
 end

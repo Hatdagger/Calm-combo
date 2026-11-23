@@ -69,13 +69,14 @@ ushort LSPCmode;
     X(3,  cc_cursor,      4,  2, 1) X(4,  cc_panel,       9,  8, 1) \
     X(5,  cc_sun,         2,  2, 1) X(6,  cc_moon,        2,  2, 1) \
     X(7,  cc_lake_sky,   20, 10, 1) X(8,  cc_ridge_mid,  32,  4, 1) \
-    X(9,  cc_ridge_near, 32,  3, 1) X(10, cc_water,      80,  4, 1) \
-    X(11, cc_firefly,     4,  1, 1) X(12, cc_sky_sea,    20, 12, 1) \
-    X(13, cc_glitter,    16,  1, 1) X(14, cc_shore,     160,  3, 1) \
-    X(15, cc_palm,       20, 12, 1) X(16, cc_umbrella,   40,  3, 1) \
+    X(9,  cc_ridge_near, 32,  3, 1) X(10, cc_water,     320,  4, 1) \
+    X(11, cc_firefly,     8,  1, 1) X(12, cc_sky_sea,    20, 12, 1) \
+    X(13, cc_glitter,    32,  1, 1) X(14, cc_shore,      20,  3, 1) \
+    X(15, cc_palm,       80, 12, 1) X(16, cc_umbrella,   80,  3, 1) \
     X(17, cc_city,       20,  8, 1) X(18, cc_rain,       16,  4, 1) \
-    X(19, cc_droplet,     4,  2, 1) X(20, cc_frame,      20, 14, 1) \
-    X(21, cc_steam,       4,  2, 1)
+    X(19, cc_droplet,     1,  2, 1) X(20, cc_frame,      20, 14, 1) \
+    X(21, cc_steam,       8,  2, 1) \
+    X(22, cc_wave,       80,  2, 1)
 
 #define X(id, name, w, h, np) \
     static ushort name##_map[(w) * (h) * 2]; \

@@ -39,6 +39,22 @@ The three scenes now play behind the boards, built from the art in `src/assets/g
 
 Sprite budget: the busiest screen (Versus over the rain window at night) shows 80 sprites on one line (the limit is 96). Code: `src/scene.c`.
 
+### Animation
+Every loop now has enough in-between frames to move smoothly, and the last frame leads straight back into the first:
+
+| Picture | Frames | Each frame shows | Loop |
+|---|---|---|---|
+| `lake/water.png` (5120×64) | 16 | 6 video frames | 1.6 s |
+| `lake/firefly.png` (128×16) | 8 (glow up and down) | 5 | 0.7 s |
+| `beach/wave.png` (1280×32) | 4 (foam ripple) | 8 | 0.5 s |
+| `beach/palm.png` (1280×192) | 16 (one sway) | 8 | 2.1 s |
+| `beach/umbrella.png` (1280×48) | 8 | 4 | 0.5 s |
+| `beach/glitter.png` (512×16) | 8 | 4 | 0.5 s |
+| `window/steam.png` (128×32) | 8 | 6 | 0.8 s |
+
+- **The shore wave** is its own layer now: `shore.png` (320×48) is just the sand, and `wave.png` is the water and foam, which the game slides up and down one pixel at a time, one swell every 9 seconds, in step with the wave sound in the beach song. In `wave.png` the foam sits about 16 px from the top and everything below it is transparent.
+- **Droplets** are one picture (16×32); the game slides them down the glass.
+
 ### Night art
 Every scene picture can have a hand-painted night copy next to it, for example `lake/sky.png` → `lake/sky_night.png`. As night falls, the picture fades from its day colours into the night copy's colours, so at full night you see exactly what was painted. Dawn and sunset still use the automatic tint.
 
