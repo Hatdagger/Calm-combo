@@ -20,3 +20,4 @@ neocore-version-switcher-spool/
 /build-pc/
 /shots/
 __pycache__/
+/bincue/

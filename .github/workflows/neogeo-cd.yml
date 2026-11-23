@@ -98,6 +98,14 @@ jobs:
               throw "mak $rule did not produce $($checks[$rule])"
             }
           }
+      - name: Raw BIN/CUE (MODE1/2352 data + audio tracks)
+        working-directory: neogeo-cd
+        run: python tools/make_bincue.py dist/CalmCombo/CalmCombo-1.0.0/cd/iso bincue
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CalmCombo-BINCUE
+          path: neogeo-cd/bincue/
+          if-no-files-found: error
       - name: List output
         if: always()
         shell: powershell

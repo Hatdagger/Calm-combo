@@ -48,7 +48,7 @@ Not yet: `<name>_night.png` recoloured copies are not used yet. Night is the aut
 | Select | Back to the menu |
 
 ## Getting a disc image
-**Easiest:** every push builds automatically on GitHub (Actions → *Neo Geo CD build*). Download the `CalmCombo-NeoGeoCD` artifact. It contains an ISO/CUE for burning or an SD loader, and a CHD for MAME.
+**Easiest:** every push builds automatically on GitHub (Actions → *Neo Geo CD build*). Download the `CalmCombo-BINCUE` artifact for a raw BIN/CUE (one BIN per track) for burning, SD loaders or emulators, or `CalmCombo-NeoGeoCD` for NeoCore's ISO/WAV/CUE and a CHD for MAME. You need to be signed in to GitHub to download artifacts, and they are kept for 90 days.
 
 **On your own Windows PC** (keep the path short, e.g. `C:\cc`, because GCC 2.95 has a 100-character path limit):
 ```
