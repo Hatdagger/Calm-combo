@@ -44,4 +44,13 @@ idle 1
 auto 2
 idle 2
 dump 13_versus_later
+# sound check: everything above, then let the versus move timer run out
+sounds menu grab clear_1 cdda
+wait 440
+sounds tick no_match
+# music off and back on (D)
+p1 D2
+wait 4
+p1 D2
+wait 4
 end

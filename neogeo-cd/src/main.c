@@ -1,6 +1,9 @@
 /*
  * Calm Combo - Neo Geo CD
  *
+ * Milestone 4: sound.  Each scene has its own song on the disc (CD tracks
+ * 2-4) and the board plays the 16 sound effects on the sound chip (sound.c).
+ *
  * Milestone 2: the board is drawn with sprites.
  *   - Every tile is its own 16x16 sprite, so it can glide when a line is
  *     slid, fall with gravity and play its pop frames from tiles.png.
@@ -17,13 +20,7 @@
 #include "externs.h"
 #include "board.h"
 #include "scene.h"
-
-#ifdef PLATFORM_CD
-#include <cdda.h>
-#endif
-
-/* Set to 1 once the three scene songs are on the disc as tracks 2-4. */
-#define HAVE_CDDA 0
+#include "sound.h"
 
 /*
  * Soft plate behind each board.  Off: the scenery needs those sprites (each
@@ -114,6 +111,7 @@ typedef struct {
 
 static Side   side[2];
 static BYTE   mode = MODE_SCORE, in_title = 1, menu_sel = 0, music_on = 1;
+static BYTE   track_on = 0;       /* CD track started last (0: none yet)  */
 /* the clock starts 50 s into the day: mid-morning at the lake */
 static DWORD  best = 0, frames = 3000, seed_mix = 0x1234567UL;
 static picture logo;
@@ -204,11 +202,12 @@ static void load_sprite_palettes(void)
 
 static const char *SCENE_NAME[3] = { "LAKESIDE ", "SHORELINE", "RAIN     " };
 
+/* track 2 = lake, 3 = beach, 4 = rain window */
 static void play_scene_song(void)
 {
-#if HAVE_CDDA && defined(PLATFORM_CD)
-    if (music_on) nc_sound_play_cdda((BYTE)(2 + scene_of(frames)));
-#endif
+    if (!music_on) return;
+    track_on = (BYTE)(2 + scene_of(frames));
+    music_play(track_on);
 }
 
 static void next_scene(void)
@@ -220,9 +219,9 @@ static void next_scene(void)
 static void toggle_music(void)
 {
     music_on = (BYTE)!music_on;
-#if HAVE_CDDA && defined(PLATFORM_CD)
-    if (music_on) nc_sound_resume_cdda(); else nc_sound_pause_cdda();
-#endif
+    if (!music_on) music_pause();
+    else if (track_on == 2 + scene_of(frames)) music_resume();
+    else play_scene_song();               /* the scene changed while it was off */
 }
 
 /* ---------- sprites ---------- */
@@ -323,6 +322,16 @@ static void say_points(Side *s, WORD pts, BYTE chain)
     if (chain > 1) { buf[n++] = ' '; buf[n++] = 'x'; buf[n++] = (char)('0' + (chain > 9 ? 9 : chain)); }
     buf[n] = 0;
     say(s, buf, PAL_P1 + s->i);
+}
+
+/* ---------- sound ---------- */
+
+/* 1P on the left and 2P on the right while both play; one player alone is centred */
+static void sfx(Side *s, BYTE id)
+{
+    BYTE pan = SND_CENTRE;
+    if (side[0].state != ST_JOIN && side[1].state != ST_JOIN) pan = s->i ? SND_RIGHT : SND_LEFT;
+    snd_play(id, pan);
 }
 
 /* ---------- board sprites ---------- */
@@ -643,14 +652,18 @@ static void resolve_tick(Side *s)
         if (s->moving) return;            /* let the slide finish first */
         if (cc_resolve_step(&s->b, &s->step)) {
             say_points(s, s->step.points, s->step.chain);
-            if (s->step.lever) say(s, "LEVER!", PAL_LEVER);
+            sfx(s, (BYTE)(SND_CLEAR_1 + (s->step.chain > 9 ? 8 : s->step.chain - 1)));
+            if (s->step.lever) { say(s, "LEVER!", PAL_LEVER); sfx(s, SND_LEVER); }
             s->state = ST_POP; s->timer = F_POP;
             return;
         }
         before = s->b.pending;
         gain = cc_resolve_end(&s->b, mode == MODE_VS ? &side[1 - s->i].b : (cc_board *)0);
-        if (gain) say(s, gain > 1 ? "+MOVES!" : "+1 MOVE", PAL_GOOD);
-        if (mode == MODE_VS && before && !s->b.pending && cc_count_stones(&s->b)) say(s, "STONES!", PAL_STONE);
+        if (gain) { say(s, gain > 1 ? "+MOVES!" : "+1 MOVE", PAL_GOOD); sfx(s, SND_MOVES); }
+        if (mode == MODE_VS && before && !s->b.pending && cc_count_stones(&s->b)) {
+            say(s, "STONES!", PAL_STONE);
+            sfx(s, SND_STONES);
+        }
         note_best(s);
         if (s->b.moves <= 0) { end_side(s); return; }
         if (!cc_has_valid_move(&s->b.g)) {
@@ -682,10 +695,14 @@ static void vs_pressure(Side *s)
 {
     if (s->state != ST_IDLE) return;
     s->idle_t++;
+    /* the last 2.5 s of the move timer tick twice a second */
+    if (s->idle_t > CC_VS_IDLE_FRAMES - 150 && s->idle_t % 30 == 0 && s->idle_t < CC_VS_IDLE_FRAMES)
+        sfx(s, SND_TICK);
     if (s->idle_t >= CC_VS_IDLE_FRAMES) {
         s->idle_t = 0;
         s->b.moves--;
         say(s, "-1 MOVE", PAL_BAD);
+        sfx(s, SND_NO_MATCH);
         if (s->b.moves <= 0) { end_side(s); return; }
     }
     if (s->b.pending > 0) {
@@ -695,6 +712,7 @@ static void vs_pressure(Side *s)
             s->b.pending = 0;
             s->held = 0;
             say(s, "STONES!", PAL_STONE);
+            sfx(s, SND_STONES);
             if (!cc_has_valid_move(&s->b.g)) cc_shuffle(&s->b);
         }
     } else {
@@ -736,7 +754,7 @@ static void drop(Side *s)
         s->idle_t = 0;
         s->state = ST_PRE; s->timer = F_PRE;
     } else {
-        if (s->has_t) say(s, "NO MATCH", PAL_BAD);   /* tiles glide back by themselves */
+        if (s->has_t) { say(s, "NO MATCH", PAL_BAD); sfx(s, SND_NO_MATCH); }   /* tiles glide back by themselves */
         s->held = 0; s->has_t = 0;
     }
 }
@@ -749,13 +767,14 @@ static void side_input(Side *s, BYTE edge, BYTE rep, BYTE start)
     case ST_JOIN:
         if (start || (edge & JOY_A)) {
             if (mode == MODE_VS) rematch(); else start_side(s, fresh_seed());
+            sfx(s, SND_MENU);
         }
         return;
     case ST_OVER:
-        if (!s->lock_t && (start || (edge & JOY_A))) start_side(s, fresh_seed());
+        if (!s->lock_t && (start || (edge & JOY_A))) { start_side(s, fresh_seed()); sfx(s, SND_MENU); }
         return;
     case ST_RESULT:
-        if (!s->lock_t && (start || (edge & JOY_A))) rematch();
+        if (!s->lock_t && (start || (edge & JOY_A))) { rematch(); snd_play(SND_MENU, SND_CENTRE); }
         return;
     case ST_IDLE:
         break;
@@ -773,7 +792,7 @@ static void side_input(Side *s, BYTE edge, BYTE rep, BYTE start)
         }
     }
     if (edge & JOY_A) {
-        if (!s->held) { s->held = 1; s->hr = s->cr; s->hc = s->cc; s->has_t = 0; }
+        if (!s->held) { s->held = 1; s->hr = s->cr; s->hc = s->cc; s->has_t = 0; sfx(s, SND_GRAB); }
         else drop(s);
     }
     if ((edge & JOY_B) && s->held) { s->held = 0; s->has_t = 0; }
@@ -791,6 +810,7 @@ int main(void)
     load_fix_palettes();
     load_sprite_palettes();
     spr_init();
+    snd_init();
     scene_boot();
     pictureInit(&logo, &cc_logo, SPR_LOGO, SPR_PAL_LOGO, 80, 40, FLIP_NONE);
 #if USE_PANEL
@@ -806,6 +826,7 @@ int main(void)
         waitVBlank();
         frames++;
         scene_tick(frames);
+        snd_tick();
 
         e1 = volMEMBYTE(P1_EDGE);  r1 = volMEMBYTE(P1_REPEAT);
         e2 = volMEMBYTE(P2_EDGE);  r2 = volMEMBYTE(P2_REPEAT);
@@ -822,9 +843,14 @@ int main(void)
         put_num(32, 0, PAL_TEXT, best, 7);
 
         if (in_title) {
-            if ((e1 | e2) & (JOY_UP | JOY_DOWN)) menu_sel = (BYTE)!menu_sel;
-            if ((e1 & JOY_A) || (ps & P1_START)) start_game(menu_sel ? MODE_VS : MODE_SCORE, 0);
-            else if ((e2 & JOY_A) || (ps & P2_START)) start_game(menu_sel ? MODE_VS : MODE_SCORE, 1);
+            if ((e1 | e2) & (JOY_UP | JOY_DOWN)) { menu_sel = (BYTE)!menu_sel; snd_play(SND_MENU, SND_CENTRE); }
+            if ((e1 & JOY_A) || (ps & P1_START)) {
+                start_game(menu_sel ? MODE_VS : MODE_SCORE, 0);
+                snd_play(SND_MENU, SND_CENTRE);
+            } else if ((e2 & JOY_A) || (ps & P2_START)) {
+                start_game(menu_sel ? MODE_VS : MODE_SCORE, 1);
+                snd_play(SND_MENU, SND_CENTRE);
+            }
             else draw_title();
             continue;
         }

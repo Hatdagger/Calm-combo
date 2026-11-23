@@ -71,6 +71,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy scipy
+      - name: Audio (placeholder songs for missing tracks, sound-chip files from sfx/*.wav)
+        working-directory: neogeo-cd
+        run: python tools/make_audio.py
       - name: Build sprites, program, ISO and CHD
         working-directory: neogeo-cd/src
         shell: powershell
@@ -78,6 +85,11 @@ jobs:
           $bm = "..\neocore\toolchain\scripts\Builder-Manager.ps1"
           $checks = @{ "make" = "..\build\CalmCombo\CalmCombo.prg" }
           foreach ($rule in @("lib", "sprite", "make", "dist:iso", "dist:mame")) {
+            if ($rule -eq "dist:iso") {
+              # NeoCore's CUE writer reads the CD tracks from the build folder
+              New-Item -ItemType Directory -Force -Path ..\build\CalmCombo\assets\cdda | Out-Null
+              Copy-Item assets\cdda\*.wav ..\build\CalmCombo\assets\cdda\ -Force
+            }
             Write-Host "=== mak $rule ===" -ForegroundColor Cyan
             powershell -ExecutionPolicy Bypass -File $bm -ConfigFile project.xml -Rule $rule
             if ($LASTEXITCODE -ne 0) { throw "mak $rule failed" }

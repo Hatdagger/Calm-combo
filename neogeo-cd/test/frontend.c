@@ -20,7 +20,10 @@
  *   dump NAME          snapshot to OUTDIR/NAME.txt
  *   clock S            set the game clock to S seconds (scene = S / 300 % 3,
  *                      time of day = S % 600: sun up for 0-299, moon after)
+ *   sounds NAME...     fail unless each named effect (or "cdda") has played
  *   end
+ *
+ * Every sound command and CD track change is logged to OUTDIR/sounds.txt.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +36,15 @@
 #include "main.c"
 #undef main
 #include "scene.c"
+
+/* sound.c, with the Z80 port and the CD BIOS calls recorded instead */
+static void stub_snd(BYTE cmd);
+static void stub_cdda(int op, BYTE track);
+#define SND_WRITE(cmd) stub_snd(cmd)
+#define CDDA_PLAY(t)   stub_cdda(0, (t))
+#define CDDA_PAUSE()   stub_cdda(1, 0)
+#define CDDA_RESUME()  stub_cdda(2, 0)
+#include "sound.c"
 
 unsigned char stub_in[8];
 ushort LSPCmode;
@@ -90,6 +102,28 @@ static long frame;
 static FILE *script;
 static const char *outdir;
 static long sc234_this_frame, sc234_max;
+static FILE *sndlog;
+static long snd_heard[SND_COUNT], cdda_plays, snd_this_frame;
+static const char *snd_name[SND_COUNT] = { SND_NAMES };
+static const char *pan_name = "LCR";
+
+static void stub_snd(BYTE cmd)
+{
+    int id = (cmd - SND_CMD_BASE) / 3, pan = (cmd - SND_CMD_BASE) % 3;
+    if (cmd < SND_CMD_BASE || id >= SND_COUNT) { fprintf(stderr, "frame %ld: bad sound command %02x\n", frame, cmd); exit(4); }
+    if (++snd_this_frame > 1) { fprintf(stderr, "frame %ld: two sound commands in one frame\n", frame); exit(4); }
+    snd_heard[id]++;
+    if (sndlog) fprintf(sndlog, "%ld %s %c\n", frame, snd_name[id], pan_name[pan]);
+}
+
+static void stub_cdda(int op, BYTE track)
+{
+    if (op == 0) {
+        if (track < 2 || track > 4) { fprintf(stderr, "frame %ld: CD track %d is not a song\n", frame, track); exit(4); }
+        cdda_plays++;
+    }
+    if (sndlog) fprintf(sndlog, "%ld cdda %s %d\n", frame, op == 0 ? "play" : op == 1 ? "pause" : "resume", track);
+}
 
 void stub_bg(WORD c) { bg = c; }
 void stub_pal(int n, int c, const void *d) { memcpy(&pal_ram[n * 16], d, (size_t)c * 32); }
@@ -256,6 +290,7 @@ void waitVBlank(void)
     if (sc234_this_frame > sc234_max) sc234_max = sc234_this_frame;
     if (sc234_this_frame > 1140) { fprintf(stderr, "frame %ld: %ld SC234 writes overflow DATlib's list\n", frame, sc234_this_frame); exit(3); }
     sc234_this_frame = 0;
+    snd_this_frame = 0;
     frame++;
     memset(stub_in, 0, sizeof stub_in);
 
@@ -278,6 +313,16 @@ void waitVBlank(void)
         if (n < 1 || cmd[0] == '#') continue;
         if (!strcmp(cmd, "wait")) wait_n = atoi(arg);
         else if (!strcmp(cmd, "dump")) dump(arg);
+        else if (!strcmp(cmd, "sounds")) {
+            char *w = line + 6;
+            int id;
+            for (w = strtok(w, " \t\r\n"); w; w = strtok(0, " \t\r\n")) {
+                if (!strcmp(w, "cdda")) { if (!cdda_plays) { fprintf(stderr, "no CD track was started\n"); exit(4); } continue; }
+                for (id = 0; id < SND_COUNT && strcmp(w, snd_name[id]); id++) ;
+                if (id == SND_COUNT) { fprintf(stderr, "unknown sound %s\n", w); exit(2); }
+                if (!snd_heard[id]) { fprintf(stderr, "frame %ld: sound %s never played\n", frame, w); exit(4); }
+            }
+        }
         else if (!strcmp(cmd, "clock")) frames = (DWORD)atol(arg) * 60;   /* jump the game clock, in seconds */
         else if (!strcmp(cmd, "idle")) { idle_p = atoi(arg) - 1; idle_guard = 0; }
         else if (!strcmp(cmd, "p1") || !strcmp(cmd, "p2")) {
@@ -289,7 +334,11 @@ void waitVBlank(void)
             sscanf(line, "%*s %d %63s", &pl, shot);
             auto_move(pl, shot[0] ? shot : 0);
         } else if (!strcmp(cmd, "end")) {
+            int id;
             printf("ran %ld frames, peak %ld sprite writes per frame\n", frame, sc234_max);
+            printf("sounds:");
+            for (id = 0; id < SND_COUNT; id++) if (snd_heard[id]) printf(" %s x%ld", snd_name[id], snd_heard[id]);
+            printf("; CD track starts: %ld\n", cdda_plays);
             exit(0);
         } else { fprintf(stderr, "bad script line: %s", line); exit(2); }
     }
@@ -301,6 +350,11 @@ int main(int argc, char **argv)
     script = fopen(argv[1], "r");
     if (!script) { perror(argv[1]); return 1; }
     outdir = argv[2];
+    {
+        char path[512];
+        sprintf(path, "%s/sounds.txt", outdir);
+        sndlog = fopen(path, "a");
+    }
     clearFixLayer();
     return game_main();
 }

@@ -156,7 +156,7 @@ def main():
     d = sys.argv[1]
     sheet = sys.argv[sys.argv.index('--sheet') + 1] if '--sheet' in sys.argv else None
     shots, bad = [], 0
-    for path in sorted(glob.glob(os.path.join(d, '*.txt'))):
+    for path in sorted(p for p in glob.glob(os.path.join(d, '*.txt')) if os.path.basename(p) != 'sounds.txt'):
         im, peak = render(path)
         name = os.path.basename(path)[:-4]
         im.save(os.path.join(d, name + '.png'))
