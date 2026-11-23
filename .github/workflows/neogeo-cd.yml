@@ -47,6 +47,7 @@ jobs:
         run: |
           mkdir -p shots
           build-pc/frontend test/tour.txt shots
+          build-pc/frontend test/scenes.txt shots
           python3 test/render_frames.py shots --sheet shots/00_sheet.png
       - uses: actions/upload-artifact@v4
         with:

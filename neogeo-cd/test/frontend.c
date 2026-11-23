@@ -18,6 +18,8 @@
  *                      a snapshot while the tile is held, just before the drop
  *   idle P             wait until player P's board has settled
  *   dump NAME          snapshot to OUTDIR/NAME.txt
+ *   clock S            set the game clock to S seconds (scene = S / 300 % 3,
+ *                      time of day = S % 600: sun up for 0-299, moon after)
  *   end
  */
 #include <stdio.h>
@@ -30,36 +32,51 @@
 #define main game_main
 #include "main.c"
 #undef main
+#include "scene.c"
 
 unsigned char stub_in[8];
 ushort LSPCmode;
 
-/* ---- fake art: tile word = picture id << 10 | tile index in the picture ---- */
-#define PIC_LOGO   1
-#define PIC_TILES  2
-#define PIC_CURSOR 3
-#define PIC_PANEL  4
+/* ---- fake art: tile word = picture id << 10 | tile index in the picture ----
+ * id, name, width and height in 16 px tiles (whole strip), palettes.
+ * test/render_frames.py has the same list with the PNG files. */
+#define ART_LIST \
+    X(1,  cc_logo,       10,  2, 1) X(2,  cc_tiles,       4,  7, 2) \
+    X(3,  cc_cursor,      4,  2, 1) X(4,  cc_panel,       9,  8, 1) \
+    X(5,  cc_sun,         2,  2, 1) X(6,  cc_moon,        2,  2, 1) \
+    X(7,  cc_lake_sky,   20, 10, 1) X(8,  cc_ridge_mid,  32,  4, 1) \
+    X(9,  cc_ridge_near, 32,  3, 1) X(10, cc_water,      80,  4, 1) \
+    X(11, cc_firefly,     4,  1, 1) X(12, cc_sky_sea,    20, 12, 1) \
+    X(13, cc_glitter,    16,  1, 1) X(14, cc_shore,     160,  3, 1) \
+    X(15, cc_palm,       20, 12, 1) X(16, cc_umbrella,   40,  3, 1) \
+    X(17, cc_city,       20,  8, 1) X(18, cc_rain,       16,  4, 1) \
+    X(19, cc_droplet,     4,  2, 1) X(20, cc_frame,      20, 14, 1) \
+    X(21, cc_steam,       4,  2, 1)
 
-static ushort map_logo[10 * 2 * 2], map_tiles[4 * 7 * 2], map_cursor[4 * 2 * 2], map_panel[9 * 8 * 2];
+#define X(id, name, w, h, np) \
+    static ushort name##_map[(w) * (h) * 2]; \
+    const paletteInfo name##_Palettes = { np, { 0 } }; \
+    const pictureInfo name = { (h) * 4, w, h, &name##_Palettes, { name##_map, name##_map, name##_map, name##_map } };
+ART_LIST
+#undef X
 
-const paletteInfo cc_logo_Palettes   = { 1, { 0 } };
-const paletteInfo cc_tiles_Palettes  = { 2, { 0 } };
-const paletteInfo cc_cursor_Palettes = { 1, { 0 } };
-const paletteInfo cc_panel_Palettes  = { 1, { 0 } };
 /* the font converter's palette: transparent, then main / shade / outline grey */
 const paletteInfo cc_font_Palettes   = { 1, { 0x8000, 0x7fff, 0x7aaa, 0x7222,
                                               0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000,
                                               0x8000, 0x8000, 0x8000, 0x8000, 0x8000, 0x8000 } };
 
-const pictureInfo cc_logo   = { 8,  10, 2, &cc_logo_Palettes,   { map_logo, map_logo, map_logo, map_logo } };
-const pictureInfo cc_tiles  = { 28, 4,  7, &cc_tiles_Palettes,  { map_tiles, map_tiles, map_tiles, map_tiles } };
-const pictureInfo cc_cursor = { 8,  4,  2, &cc_cursor_Palettes, { map_cursor, map_cursor, map_cursor, map_cursor } };
-const pictureInfo cc_panel  = { 32, 9,  8, &cc_panel_Palettes,  { map_panel, map_panel, map_panel, map_panel } };
-
 static void fill_map(ushort *m, int id, int n)
 {
     int k;
     for (k = 0; k < n; k++) { m[k * 2] = (ushort)((id << 10) | k); m[k * 2 + 1] = 0; }
+}
+
+static int pict_id(const pictureInfo *pi)
+{
+#define X(id, name, w, h, np) if (pi == &name) return id;
+    ART_LIST
+#undef X
+    return 0;
 }
 
 /* ---- fake hardware ---- */
@@ -80,10 +97,9 @@ void stub_vram(WORD a, WORD d) { vram[a] = d; sc234_this_frame++; }
 
 void initGfx(void)
 {
-    fill_map(map_logo, PIC_LOGO, 20);
-    fill_map(map_tiles, PIC_TILES, 28);
-    fill_map(map_cursor, PIC_CURSOR, 8);
-    fill_map(map_panel, PIC_PANEL, 72);
+#define X(id, name, w, h, np) fill_map(name##_map, id, (w) * (h));
+    ART_LIST
+#undef X
 }
 
 void clearFixLayer(void) { memset(fix_ch, ' ', sizeof fix_ch); memset(fix_pal, 0, sizeof fix_pal); }
@@ -120,20 +136,39 @@ static void dump(const char *name)
             for (x = 0; x < 16; x++) fprintf(f, " %04x", pal_ram[k + x]);
             fprintf(f, "\n");
         }
-    for (k = 0; k < npics; k++) {
-        const pictureInfo *pi = pics[k]->info;
-        int id = pi == &cc_logo ? PIC_LOGO : pi == &cc_panel ? PIC_PANEL : 0;
+    for (k = 0; k < npics; k++)
         if (pics[k]->shown)
-            fprintf(f, "pict %d %d %d %d %d %d\n", id, pics[k]->baseSprite, pics[k]->posX, pics[k]->posY,
-                    pi->tileWidth, pics[k]->basePalette);
+            fprintf(f, "pict %d %d %d %d %d %d\n", pict_id(pics[k]->info), pics[k]->baseSprite, pics[k]->posX,
+                    pics[k]->posY, pics[k]->info->tileWidth, pics[k]->basePalette);
+    /* sprites, with sticky chains resolved: x of a chained sprite = previous + 16 */
+    {
+        int ch = 0, cx = 0, cy = 0, h, t;
+        for (s = 1; s < 381; s++) {
+            WORD yw = vram[0x8200 | s];
+            if (yw & 0x40) {
+                cx += 16;
+                if (!ch) continue;
+            } else {
+                ch = yw & 0x3f;
+                cx = vram[0x8400 | s] >> 7;
+                if (cx >= 400) cx -= 512;
+                cy = YSHIFT - (yw >> 7);
+                if (cy > 300) cy -= 512;
+                if (!ch) continue;
+            }
+            h = ch > 32 ? 32 : ch;
+            fprintf(f, "spr %d %d %d %d", s, cx, cy, h);
+            for (t = 0; t < h; t++) fprintf(f, " %04x %04x", vram[(s << 6) + t * 2], vram[(s << 6) + t * 2 + 1]);
+            fprintf(f, "\n");
+        }
     }
-    for (s = 1; s < 381; s++) {
-        WORD yw = vram[0x8200 | s];
-        if (!(yw & 0x3f)) continue;
-        y = YSHIFT - (yw >> 7);
-        x = vram[0x8400 | s] >> 7;
-        fprintf(f, "spr %d %d %d %04x %04x\n", s, x, y, vram[s << 6], vram[(s << 6) + 1]);
-    }
+    /* scenery colour state, so the renderer can tint the art the same way */
+    fprintf(f, "tint %u %u\n", (unsigned)day_u(frames), (unsigned)level);
+    fprintf(f, "scene %d phase %d layers %d:", cur, phase, nlay);
+    for (k = 0; k < nlay; k++) fprintf(f, " %d%s", lay[k].spr, lay[k].d_shown ? "" : (lay[k].shown ? "!" : "-"));
+    fprintf(f, "\n");
+    for (k = 0; k < nreg; k++)
+        fprintf(f, "pmode %d %d %d\n", PAL_SCENE + reg[k].first, reg[k].p->count, reg[k].mode);
     for (y = 2; y < 30; y++) {
         fprintf(f, "fix ");
         for (x = 0; x < 40; x++) fputc(fix_ch[x][y], f);
@@ -243,6 +278,7 @@ void waitVBlank(void)
         if (n < 1 || cmd[0] == '#') continue;
         if (!strcmp(cmd, "wait")) wait_n = atoi(arg);
         else if (!strcmp(cmd, "dump")) dump(arg);
+        else if (!strcmp(cmd, "clock")) frames = (DWORD)atol(arg) * 60;   /* jump the game clock, in seconds */
         else if (!strcmp(cmd, "idle")) { idle_p = atoi(arg) - 1; idle_guard = 0; }
         else if (!strcmp(cmd, "p1") || !strcmp(cmd, "p2")) {
             pl = cmd[1] - '0';

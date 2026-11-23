@@ -1,0 +1,37 @@
+# Each scene by day and by night, plus a scene change mid-fade.
+# Clock: scene = seconds / 300 % 3 (lake, beach, window); the sun is up for
+# the first 300 s of every 600 s day, the moon for the rest.
+p1 START
+idle 1
+clock 150
+wait 90
+dump n01_lake_noon
+clock 1080
+wait 90
+dump n02_lake_night
+clock 1290
+wait 90
+dump n03_beach_morning
+clock 330
+wait 90
+dump n04_beach_night
+clock 840
+wait 90
+dump n05_window_afternoon
+clock 1520
+wait 90
+dump n06_window_night
+p1 C
+wait 6
+dump n07_fading_out
+wait 30
+dump n08_next_scene_fading_in
+# busiest case: two boards over the rain window at night
+p1 SELECT
+wait 4
+p1 D
+p1 A
+clock 1560
+wait 90
+dump n09_versus_window_night
+end

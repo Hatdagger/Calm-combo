@@ -16,6 +16,7 @@
 #include <input.h>
 #include "externs.h"
 #include "board.h"
+#include "scene.h"
 
 #ifdef PLATFORM_CD
 #include <cdda.h>
@@ -24,8 +25,12 @@
 /* Set to 1 once the three scene songs are on the disc as tracks 2-4. */
 #define HAVE_CDDA 0
 
-/* Set to 0 to drop the soft plate behind each board (saves 18 sprites per line). */
-#define USE_PANEL 1
+/*
+ * Soft plate behind each board.  Off: the scenery needs those sprites (each
+ * panel adds 9 to every board line, and the window scene would go over the
+ * hardware limit of 96 per line).  The tiles carry their own dark plate.
+ */
+#define USE_PANEL 0
 
 /* ---------- screen layout ---------- */
 /* fix map: 40 columns, visible rows 2..29, so text row n is at pixel y n*8 */
@@ -61,7 +66,7 @@ static const short BX0[2] = { 24, 168 };   /* board left, pixels */
 #define SPR_PAL_BASE 32
 
 /* sprite numbers: higher numbers are drawn on top */
-#define SPR_LOGO     1
+#define SPR_LOGO     340        /* 10 sprites, over the scenery */
 #define SPR_PANEL    200        /* 2 x 9 sprites */
 #define SPR_TILE     220        /* 2 x 56 sprites, one per tile */
 #define SPR_HELD     332        /* 2: the lifted tile, above its neighbours */
@@ -77,8 +82,6 @@ static const short BX0[2] = { 24, 168 };   /* board left, pixels */
 #define F_MSG      70
 #define F_FLASH    10
 #define FALL_MAX   9            /* fall speed cap, pixels per frame */
-#define SCENE_FRAMES (300L * 60L)
-#define DAY_FRAMES   (600L * 60L)
 
 enum { ST_JOIN, ST_IDLE, ST_PRE, ST_POP, ST_FALL, ST_SHUFFLE, ST_OVER, ST_RESULT };
 enum { MODE_SCORE, MODE_VS };
@@ -111,7 +114,8 @@ typedef struct {
 
 static Side   side[2];
 static BYTE   mode = MODE_SCORE, in_title = 1, menu_sel = 0, music_on = 1;
-static DWORD  best = 0, frames = 0, seed_mix = 0x1234567UL;
+/* the clock starts 50 s into the day: mid-morning at the lake */
+static DWORD  best = 0, frames = 3000, seed_mix = 0x1234567UL;
 static picture logo;
 #if USE_PANEL
 static picture panel[2];
@@ -126,8 +130,6 @@ static WORD ng5(WORD r, WORD g, WORD b)
                   ((r >> 1) << 8) | ((g >> 1) << 4) | (b >> 1));
 }
 
-/* 8-bit RGB -> Neo Geo colour word */
-static WORD ng_rgb(WORD r, WORD g, WORD b) { return ng5((WORD)(r >> 3), (WORD)(g >> 3), (WORD)(b >> 3)); }
 
 static WORD ch_r(WORD w) { return (WORD)(((w >> 7) & 0x1e) | ((w >> 14) & 1)); }
 static WORD ch_g(WORD w) { return (WORD)(((w >> 3) & 0x1e) | ((w >> 13) & 1)); }
@@ -200,28 +202,7 @@ static void load_sprite_palettes(void)
     palJobPut(SPR_PAL_LOGO, cc_logo_Palettes.count, cc_logo_Palettes.data);
 }
 
-/* scene backdrop: day colour drifting to night and back over 10 minutes */
-static const BYTE SKY[3][2][3] = {
-    { { 0x6f, 0x6a, 0xa3 }, { 0x18, 0x20, 0x4a } },   /* mountain lake */
-    { { 0x4f, 0x97, 0xc4 }, { 0x0a, 0x0f, 0x2e } },   /* beach         */
-    { { 0x5c, 0x61, 0x70 }, { 0x1c, 0x22, 0x30 } }    /* rain window   */
-};
 static const char *SCENE_NAME[3] = { "LAKESIDE ", "SHORELINE", "RAIN     " };
-
-static BYTE scene_of(DWORD t) { return (BYTE)((t / SCENE_FRAMES) % 3); }
-
-static void update_backdrop(void)
-{
-    BYTE s = scene_of(frames);
-    DWORD ph = frames % DAY_FRAMES, f, half = DAY_FRAMES / 2;
-    WORD ch[3];
-    int k;
-    f = ph < half ? ph : DAY_FRAMES - ph;          /* 0 = day, half = night */
-    f = (f * 256) / half;
-    for (k = 0; k < 3; k++)
-        ch[k] = (WORD)((SKY[s][0][k] * (256 - f) + SKY[s][1][k] * f) >> 8);
-    backgroundColor(ng_rgb(ch[0], ch[1], ch[2]));
-}
 
 static void play_scene_song(void)
 {
@@ -810,6 +791,7 @@ int main(void)
     load_fix_palettes();
     load_sprite_palettes();
     spr_init();
+    scene_boot();
     pictureInit(&logo, &cc_logo, SPR_LOGO, SPR_PAL_LOGO, 80, 40, FLIP_NONE);
 #if USE_PANEL
     for (k = 0; k < 2; k++)
@@ -823,7 +805,7 @@ int main(void)
         SCClose();
         waitVBlank();
         frames++;
-        update_backdrop();
+        scene_tick(frames);
 
         e1 = volMEMBYTE(P1_EDGE);  r1 = volMEMBYTE(P1_REPEAT);
         e2 = volMEMBYTE(P2_EDGE);  r2 = volMEMBYTE(P2_REPEAT);
@@ -835,7 +817,7 @@ int main(void)
         if (edges & JOY_D) toggle_music();
         if (frames % SCENE_FRAMES == 0) play_scene_song();
 
-        put(1, 0, PAL_DIM, SCENE_NAME[scene_of(frames)]);
+        put(1, 0, PAL_DIM, SCENE_NAME[scene_shown()]);
         put(27, 0, PAL_DIM, "BEST");
         put_num(32, 0, PAL_TEXT, best, 7);
 

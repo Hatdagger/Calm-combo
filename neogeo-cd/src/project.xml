@@ -31,6 +31,58 @@
         <pict id="cc_panel">
           <file>assets\gfx\board\panel.png</file>
         </pict>
+        <!-- scenery (milestone 3): every frame of every scene loads once at boot -->
+        <pict id="cc_sun">
+          <file>assets\gfx\common\sun.png</file>
+        </pict>
+        <pict id="cc_moon">
+          <file>assets\gfx\common\moon.png</file>
+        </pict>
+        <pict id="cc_lake_sky">
+          <file>assets\gfx\lake\sky.png</file>
+        </pict>
+        <pict id="cc_ridge_mid">
+          <file>assets\gfx\lake\ridge_mid.png</file>
+        </pict>
+        <pict id="cc_ridge_near">
+          <file>assets\gfx\lake\ridge_near.png</file>
+        </pict>
+        <pict id="cc_water">
+          <file>assets\gfx\lake\water.png</file>
+        </pict>
+        <pict id="cc_firefly">
+          <file>assets\gfx\lake\firefly.png</file>
+        </pict>
+        <pict id="cc_sky_sea">
+          <file>assets\gfx\beach\sky_sea.png</file>
+        </pict>
+        <pict id="cc_glitter">
+          <file>assets\gfx\beach\glitter.png</file>
+        </pict>
+        <pict id="cc_shore">
+          <file>assets\gfx\beach\shore.png</file>
+        </pict>
+        <pict id="cc_palm">
+          <file>assets\gfx\beach\palm.png</file>
+        </pict>
+        <pict id="cc_umbrella">
+          <file>assets\gfx\beach\umbrella.png</file>
+        </pict>
+        <pict id="cc_city">
+          <file>assets\gfx\window\city.png</file>
+        </pict>
+        <pict id="cc_rain">
+          <file>assets\gfx\window\rain.png</file>
+        </pict>
+        <pict id="cc_droplet">
+          <file>assets\gfx\window\droplet.png</file>
+        </pict>
+        <pict id="cc_frame">
+          <file>assets\gfx\window\frame.png</file>
+        </pict>
+        <pict id="cc_steam">
+          <file>assets\gfx\window\steam.png</file>
+        </pict>
       </chardata>
       <fixdata>
         <chardata>
