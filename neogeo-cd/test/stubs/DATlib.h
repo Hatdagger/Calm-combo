@@ -26,9 +26,10 @@ extern ushort LSPCmode;
 #define VRAM_POSX_ADDR(s)   (0x8400|(s))
 #define VRAM_POSX(x)        ((x)<<7)
 #define volMEMBYTE(a) (*((volatile BYTE *)(a)))
-#define backgroundColor(c) stub_bg(c)
-#define palJobPut(n,c,d) stub_pal((n),(c),(d))
-#define SC234Put(a,d) stub_vram((WORD)(a),(WORD)(d))
+/* braced like the real DATlib macros, so "if (x) macro(); else" fails here too */
+#define backgroundColor(c) {stub_bg(c);}
+#define palJobPut(n,c,d) {stub_pal((n),(c),(d));}
+#define SC234Put(a,d) {stub_vram((WORD)(a),(WORD)(d));}
 void stub_bg(WORD c); void stub_pal(int n, int c, const void *d); void stub_vram(WORD a, WORD d);
 void initGfx(void); void SCClose(void); void waitVBlank(void); void clearFixLayer(void);
 void fixPrint(ushort x, ushort y, ushort pal, ushort bank, const char *buf);

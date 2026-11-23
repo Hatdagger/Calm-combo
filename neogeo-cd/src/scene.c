@@ -200,8 +200,12 @@ static void update_palettes(WORD u, BYTE all)
             }
         }
     }
-    if (all) palJobPut(PAL_SCENE, npals, palbuf);
-    else palJobPut(PAL_SCENE + reg[k0].first, reg[k0].p->count, palbuf + reg[k0].first * 16);
+    /* palJobPut is a braced macro: keep the braces here */
+    if (all) {
+        palJobPut(PAL_SCENE, npals, palbuf);
+    } else {
+        palJobPut(PAL_SCENE + reg[k0].first, reg[k0].p->count, palbuf + reg[k0].first * 16);
+    }
     k = cur < NUM_SCENES ? cur : 0;
     backgroundColor(mk(TR[SKY5[k][0]], TG[SKY5[k][1]], TB[SKY5[k][2]]));
 }
