@@ -21,8 +21,18 @@
  * table in night_maps.h (made by tools/make_night.py): day colour -> night
  * colour.  As night falls each colour fades from its tinted day colour into
  * its night colour, so at full night the scene shows the painted colours
- * exactly.  The table is looked up once per palette entry when a scene is
- * built (nightbuf), so the per-frame cost is one blend.
+ * exactly.  The tables are looked up once at boot (nightpool), so building
+ * a scene costs nothing and the per-frame cost is one blend.
+ *
+ * Keeping scene changes smooth (the screen goes black, but the board and
+ * cursor keep moving, so every frame has to stay on time):
+ *   - each picture's colours at full brightness are kept in base[] (5-bit
+ *     r, g, b).  The tint only moves slowly, so one picture is redone per
+ *     frame.  A fade just dims base[] through three small tables, so a fade
+ *     step costs a few table lookups per colour, not the whole tint maths;
+ *   - a new scene works out its colours one picture per frame while the
+ *     screen is black, and its layers are drawn a few per frame (budget),
+ *     like laying down a painting coat by coat; the fade-in waits for both.
  *
  * Strict C89: gcc 2.95, no // comments, declarations at the top of blocks.
  */
@@ -56,11 +66,12 @@ typedef struct {
     short d_col, d_x, d_y;
 } Layer;
 
-typedef struct { const paletteInfo *p; BYTE first, mode, night; } PalReg;
+typedef struct { const paletteInfo *p; const WORD *nt; BYTE first, mode, night, ready; } PalReg;
 typedef struct { const pictureInfo *pi; const WORD *map; WORD n; } NightMap;
 #include "night_maps.h"
 
 #define NO_NIGHT 0x8000
+#define NIGHT_POOL 64             /* palettes of night colours worked out at boot */
 
 static Layer  lay[MAX_LAYERS];
 static BYTE   nlay;
@@ -68,7 +79,10 @@ static WORD   next_spr;
 static PalReg reg[MAX_REG];
 static BYTE   nreg, npals;
 static WORD   palbuf[MAX_PALS * 16];
-static WORD   nightbuf[MAX_PALS * 16];   /* night colour per entry (r<<10|g<<5|b) or NO_NIGHT */
+static BYTE   baseR[MAX_PALS * 16], baseG[MAX_PALS * 16], baseB[MAX_PALS * 16];   /* full brightness */
+static WORD   nightpool[NIGHT_POOL * 16];  /* night colour per entry (r<<10|g<<5|b) or NO_NIGHT */
+static const WORD *night_of_map[N_NIGHT_MAPS];
+static BYTE   nready;                      /* pictures whose base[] is worked out */
 static int    budget;
 
 static BYTE   cur = 0xff, phase, level;   /* phase: 0 steady, 1 fade out, 2 fade in */
@@ -95,14 +109,9 @@ static WORD rnd(WORD n)
 
 /* ---------- palettes ---------- */
 
-static WORD c5r(WORD w) { return (WORD)(((w >> 7) & 0x1e) | ((w >> 14) & 1)); }
-static WORD c5g(WORD w) { return (WORD)(((w >> 3) & 0x1e) | ((w >> 13) & 1)); }
-static WORD c5b(WORD w) { return (WORD)(((w << 1) & 0x1e) | ((w >> 12) & 1)); }
-static WORD mk(WORD r, WORD g, WORD b)
-{
-    return (WORD)(((r & 1) << 14) | ((g & 1) << 13) | ((b & 1) << 12) |
-                  ((r >> 1) << 8) | ((g >> 1) << 4) | (b >> 1));
-}
+#define c5r(w) ((WORD)((((w) >> 7) & 0x1e) | (((w) >> 14) & 1)))
+#define c5g(w) ((WORD)((((w) >> 3) & 0x1e) | (((w) >> 13) & 1)))
+#define c5b(w) ((WORD)((((w) << 1) & 0x1e) | (((w) >> 12) & 1)))
 
 /*
  * The night colour for one day colour (5-bit r, g, b): an exact match in the
@@ -133,27 +142,19 @@ static WORD night_lookup(const NightMap *nm, WORD r, WORD g, WORD b)
 static WORD pal_for(const pictureInfo *pi, BYTE mode)
 {
     const paletteInfo *p = pi->palInfo;
-    const NightMap *nm = 0;
-    const WORD *src;
-    WORD *nb;
-    int k, e;
+    WORD *pb;
+    int k;
     for (k = 0; k < nreg; k++)
         if (reg[k].p == p) return (WORD)(PAL_SCENE + reg[k].first);
     if (nreg >= MAX_REG || npals + p->count > MAX_PALS) return PAL_SCENE;   /* out of room: share */
-    reg[nreg].p = p; reg[nreg].first = npals; reg[nreg].mode = mode; reg[nreg].night = 0;
+    reg[nreg].p = p; reg[nreg].first = npals; reg[nreg].mode = mode;
+    reg[nreg].nt = 0; reg[nreg].night = 0; reg[nreg].ready = 0;
     if (mode != M_GLOW)
         for (k = 0; k < N_NIGHT_MAPS; k++)
-            if (NIGHT_MAPS[k].pi == pi) nm = &NIGHT_MAPS[k];
-    if (nm) {
-        reg[nreg].night = 1;
-        for (k = 0; k < p->count; k++) {
-            src = (const WORD *)p->data + k * 16;
-            nb = nightbuf + (npals + k) * 16;
-            nb[0] = NO_NIGHT;
-            for (e = 1; e < 16; e++)
-                nb[e] = night_lookup(nm, c5r(src[e]), c5g(src[e]), c5b(src[e]));
-        }
-    }
+            if (NIGHT_MAPS[k].pi == pi && night_of_map[k]) { reg[nreg].nt = night_of_map[k]; reg[nreg].night = 1; }
+    /* black until the fade-in: these slots may still hold another scene's colours */
+    pb = palbuf + npals * 16;
+    for (k = 0; k < p->count * 16; k++) pb[k] = 0;
     nreg++;
     npals = (BYTE)(npals + p->count);
     return (WORD)(PAL_SCENE + reg[nreg - 1].first);
@@ -187,25 +188,34 @@ static WORD night_of(WORD u)
     return 0;
 }
 
-static BYTE TR[32], TG[32], TB[32], FD[32];
+static BYTE TR[32], TG[32], TB[32];     /* tint at full brightness      */
+static WORD FR[32], FG[32], FB[32];     /* 5-bit channel -> faded colour bits */
 
 static void make_tables(WORD u)
 {
     int k, c;
-    long m[3];
+    WORD m[3];
     for (k = 0; k < NKEY - 1 && u >= KEY_U[k + 1]; k++) ;
     for (c = 0; c < 3; c++) {
         long a = KEY_C[k][c], b = KEY_C[k + 1][c], span = KEY_U[k + 1] - KEY_U[k];
-        m[c] = a + ((b - a) * (long)(u - KEY_U[k])) / span;
+        m[c] = (WORD)(a + ((b - a) * (long)(u - KEY_U[k])) / span);
     }
     for (c = 0; c < 32; c++) {
-        TR[c] = (BYTE)((c * m[0] * level) >> 13);   /* c * m/256 * level/32 */
-        TG[c] = (BYTE)((c * m[1] * level) >> 13);
-        TB[c] = (BYTE)((c * m[2] * level) >> 13);
-        FD[c] = (BYTE)((c * level) >> 5);
-        if (TR[c] > 31) TR[c] = 31;
-        if (TG[c] > 31) TG[c] = 31;
-        if (TB[c] > 31) TB[c] = 31;
+        WORD r = (WORD)(((WORD)c * m[0]) >> 8), g = (WORD)(((WORD)c * m[1]) >> 8), b = (WORD)(((WORD)c * m[2]) >> 8);
+        TR[c] = (BYTE)(r > 31 ? 31 : r);
+        TG[c] = (BYTE)(g > 31 ? 31 : g);
+        TB[c] = (BYTE)(b > 31 ? 31 : b);
+    }
+}
+
+static void make_fade(void)
+{
+    WORD c, f;
+    for (c = 0; c < 32; c++) {
+        f = (WORD)((c * level) >> 5);
+        FR[c] = (WORD)(((f & 1) << 14) | ((f >> 1) << 8));
+        FG[c] = (WORD)(((f & 1) << 13) | ((f >> 1) << 4));
+        FB[c] = (WORD)(((f & 1) << 12) | (f >> 1));
     }
 }
 
@@ -215,60 +225,95 @@ static const BYTE SKY5[NUM_SCENES][3] = {
     { 0x5c >> 3, 0x61 >> 3, 0x70 >> 3 }    /* rain: the sky behind the city */
 };
 
+/* one picture's colours at full brightness, for time of day u */
+static void tint_reg(int k, WORD n)
+{
+    int p, e, i;
+    WORD w, r, g, b, m = (WORD)(256 - n);
+    const WORD *src, *nsrc;
+    for (p = 0; p < reg[k].p->count; p++) {
+        src = (const WORD *)reg[k].p->data + p * 16;
+        nsrc = reg[k].nt ? reg[k].nt + p * 16 : 0;
+        i = (reg[k].first + p) * 16;
+        for (e = 1; e < 16; e++) {
+            w = src[e];
+            r = c5r(w); g = c5g(w); b = c5b(w);
+            if (nsrc && n && nsrc[e] != NO_NIGHT) {
+                /* painted night art: tinted day colour -> night colour */
+                w = nsrc[e];
+                r = (WORD)((TR[r] * m + ((w >> 10) & 31) * n) >> 8);
+                g = (WORD)((TG[g] * m + ((w >> 5) & 31) * n) >> 8);
+                b = (WORD)((TB[b] * m + (w & 31) * n) >> 8);
+            } else if (reg[k].mode == M_GLOW) {
+                /* lights only fade */
+            } else if (reg[k].mode == M_LIGHTS && !nsrc && r == 11 && g == 12 && b == 14) {
+                /* a lit window: grey by day, warm glow at night */
+                r = (WORD)((TR[r] * m + 31 * n) >> 8);
+                g = (WORD)((TG[g] * m + 26 * n) >> 8);
+                b = (WORD)((TB[b] * m + 17 * n) >> 8);
+            } else {
+                r = TR[r]; g = TG[g]; b = TB[b];
+            }
+            baseR[i + e] = (BYTE)r; baseG[i + e] = (BYTE)g; baseB[i + e] = (BYTE)b;
+        }
+    }
+    if (!reg[k].ready) { reg[k].ready = 1; nready++; }
+}
+
+/* base[] -> palbuf at the current fade level */
+static void emit_reg(int k)
+{
+    int p, e, i;
+    WORD *out;
+    for (p = 0; p < reg[k].p->count; p++) {
+        i = (reg[k].first + p) * 16;
+        out = palbuf + i;
+        out[0] = ((const WORD *)reg[k].p->data)[p * 16];
+        for (e = 1; e < 16; e++)
+            out[e] = (WORD)(FR[baseR[i + e]] | FG[baseG[i + e]] | FB[baseB[i + e]]);
+    }
+}
+
 /*
- * Recolour the scene palettes.  During a fade every palette changes every
- * frame; otherwise the tint moves slowly, so one picture's palettes are
- * redone per frame in turn, which keeps the CPU cost per frame small.
+ * Recolour the scene palettes.  One picture's tint is redone per frame in
+ * turn (the tint moves slowly).  Steady: only that picture is sent.  During
+ * a fade every palette is dimmed from base[] and sent, which is cheap.
+ * A new scene's pictures are tinted one per frame before its fade-in.
  */
 static BYTE rr;
 
-static void update_palettes(WORD u, BYTE all)
+static void update_palettes(WORD u, BYTE fading)
 {
     static WORD tu = 0xffff;
     static BYTE tl = 0xff;
-    int k, p, e, k0, k1;
-    WORD w, r, g, b, n = night_of(u), *out;
-    const WORD *src, *nsrc;
-    if (u != tu || level != tl) { make_tables(u); tu = u; tl = level; }
+    WORD n = night_of(u);
+    int k, s;
+    if (u != tu) { make_tables(u); tu = u; }
+    if (level != tl) { make_fade(); tl = level; }
     if (!nreg) return;
-    if (all) { k0 = 0; k1 = nreg; }
-    else { k0 = rr % nreg; k1 = k0 + 1; rr++; }
-    for (k = k0; k < k1; k++) {
-        for (p = 0; p < reg[k].p->count; p++) {
-            src = (const WORD *)reg[k].p->data + p * 16;
-            out = palbuf + (reg[k].first + p) * 16;
-            nsrc = nightbuf + (reg[k].first + p) * 16;
-            out[0] = src[0];
-            for (e = 1; e < 16; e++) {
-                w = src[e];
-                r = c5r(w); g = c5g(w); b = c5b(w);
-                if (reg[k].night && n && nsrc[e] != NO_NIGHT) {
-                    /* painted night art: tinted day colour -> night colour */
-                    w = nsrc[e];
-                    out[e] = mk((WORD)((TR[r] * (256 - n) + FD[(w >> 10) & 31] * n) >> 8),
-                                (WORD)((TG[g] * (256 - n) + FD[(w >> 5) & 31] * n) >> 8),
-                                (WORD)((TB[b] * (256 - n) + FD[w & 31] * n) >> 8));
-                } else if (reg[k].mode == M_GLOW) {
-                    out[e] = mk(FD[r], FD[g], FD[b]);
-                } else if (reg[k].mode == M_LIGHTS && !reg[k].night && r == 11 && g == 12 && b == 14) {
-                    /* a lit window: grey by day, warm glow at night */
-                    out[e] = mk((WORD)((TR[r] * (256 - n) + FD[31] * n) >> 8),
-                                (WORD)((TG[g] * (256 - n) + FD[26] * n) >> 8),
-                                (WORD)((TB[b] * (256 - n) + FD[17] * n) >> 8));
-                } else {
-                    out[e] = mk(TR[r], TG[g], TB[b]);
-                }
-            }
+    if (nready < nreg) {
+        /* a new scene: tint the next picture (the screen is still black) */
+        for (k = 0; k < nreg && reg[k].ready; k++) ;
+        tint_reg(k, n);
+        if (level == 0) {
+            /* keep its slots black until the fade-in */
+            palJobPut(PAL_SCENE, npals, palbuf);
+            return;
         }
+    } else {
+        k = rr % nreg; rr++;
+        if (level) tint_reg(k, n);   /* while fully black the colours wait */
     }
     /* palJobPut is a braced macro: keep the braces here */
-    if (all) {
+    if (fading) {
+        for (k = 0; k < nreg; k++) emit_reg(k);
         palJobPut(PAL_SCENE, npals, palbuf);
     } else {
-        palJobPut(PAL_SCENE + reg[k0].first, reg[k0].p->count, palbuf + reg[k0].first * 16);
+        emit_reg(k);
+        palJobPut(PAL_SCENE + reg[k].first, reg[k].p->count, palbuf + reg[k].first * 16);
     }
-    k = cur < NUM_SCENES ? cur : 0;
-    backgroundColor(mk(TR[SKY5[k][0]], TG[SKY5[k][1]], TB[SKY5[k][2]]));
+    s = cur < NUM_SCENES ? cur : 0;
+    backgroundColor(FR[TR[SKY5[s][0]]] | FG[TG[SKY5[s][1]]] | FB[TB[SKY5[s][2]]]);
 }
 
 /* ---------- layers ---------- */
@@ -293,7 +338,7 @@ static BYTE layer_new(const pictureInfo *pi, BYTE mode, short x, short y,
 
 static void layer_draw(Layer *l)
 {
-    int k, t, sc, col0, th, need;
+    int k, t, tt, c, sc0, col0, th, need;
     WORD a, pal;
     const ushort *col, *m;
     short x;
@@ -309,15 +354,21 @@ static void layer_draw(Layer *l)
         if (need > budget && budget < WRITE_BUDGET) return;
         th = l->pi->tileHeight;
         pal = (WORD)(l->pal << 8);
+        sc0 = (WORD)l->frame * (WORD)l->fw;
+        c = col0;                         /* source column, wrapping at srcw */
+        /* no division per tile: the 68000 divides slowly */
         for (k = 0; k < l->ncols; k++) {
-            sc = l->frame * l->fw + (l->srcw ? (col0 + k) % l->srcw : k);
-            col = l->pi->maps[0] + sc * th * 2;
+            col = l->pi->maps[0] + (WORD)(sc0 + c) * (WORD)th * 2;
             a = (WORD)VRAM_SPR_ADDR(l->spr + k);
-            for (t = 0; t < l->h; t++) {
-                m = col + (t % th) * 2;
+            m = col;
+            for (t = 0, tt = 0; t < l->h; t++) {
                 SC234Put(a, m[0]); a++;
                 SC234Put(a, (WORD)(m[1] + pal)); a++;
+                m += 2;
+                if (++tt == th) { tt = 0; m = col; }   /* taller than the picture: repeat */
             }
+            c++;
+            if (l->srcw && c == l->srcw) c = 0;
         }
         budget -= need;
         l->d_ok = 1; l->d_frame = l->frame; l->d_col = (short)col0;
@@ -343,7 +394,7 @@ static void build(BYTE s)
     int k;
     for (k = 0; k < SPR_SCENE_N; k++) SC234Put(VRAM_POSY_ADDR(SPR_SCENE + k), S_POSY(224, 0));
     budget -= SPR_SCENE_N;
-    nlay = 0; nreg = 0; npals = 0; next_spr = SPR_SCENE;
+    nlay = 0; nreg = 0; npals = 0; nready = 0; next_spr = SPR_SCENE;
     L_sun = L_moon = L_mid = L_near = L_water = L_fly0 = L_glit = L_shore = L_palm = L_umb =
         L_city = L_rain = L_drop0 = L_steam = 0xff;
     cur = s;
@@ -449,9 +500,33 @@ static void animate(DWORD frames, WORD u)
 
 /* ---------- public ---------- */
 
+/* every night colour table, worked out once so a scene change has nothing to look up */
+static void night_boot(void)
+{
+    const paletteInfo *p;
+    const WORD *src;
+    WORD *nb;
+    int k, q, e, used = 0;
+    for (k = 0; k < N_NIGHT_MAPS; k++) {
+        p = NIGHT_MAPS[k].pi->palInfo;
+        night_of_map[k] = 0;
+        if (used + p->count > NIGHT_POOL) continue;   /* out of room: tint only */
+        night_of_map[k] = nightpool + used * 16;
+        for (q = 0; q < p->count; q++) {
+            src = (const WORD *)p->data + q * 16;
+            nb = nightpool + (used + q) * 16;
+            nb[0] = NO_NIGHT;
+            for (e = 1; e < 16; e++)
+                nb[e] = night_lookup(&NIGHT_MAPS[k], c5r(src[e]), c5g(src[e]), c5b(src[e]));
+        }
+        used += p->count;
+    }
+}
+
 void scene_boot(void)
 {
     int k;
+    night_boot();
     for (k = 0; k < SPR_SCENE_N; k++) {
         SC234Put(VRAM_SHRINK_ADDR(SPR_SCENE + k), 0xfff);
         SC234Put(VRAM_POSY_ADDR(SPR_SCENE + k), S_POSY(224, 0));
@@ -476,7 +551,7 @@ void scene_tick(DWORD frames)
     if (phase == 1) {
         if (level > 0) level = (BYTE)(level > 2 ? level - 2 : 0);
         else { build(want); phase = 2; }
-    } else if (phase == 2 && all_drawn()) {
+    } else if (phase == 2 && all_drawn() && nready == nreg) {
         level = (BYTE)(level + 2 < FADE_MAX ? level + 2 : FADE_MAX);
         if (level == FADE_MAX) phase = 0;
     }

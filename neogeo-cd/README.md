@@ -34,7 +34,7 @@ The three scenes now play behind the boards, built from the art in `src/assets/g
 - **Beach:** sky and sea, a wave rolling in and out every 9 seconds, a swaying palm, the flapping umbrella edge, and glitter on the sea under the sun or moon.
 - **Rain window:** the city (its lit windows switch on at night), falling rain, droplets sliding down the glass, the window frame and steam off the mug.
 - **Day and night:** a 10-minute day done with palettes only: dawn, day, sunset, night. The sun and moon cross the sky on an arc. Light sources (sun, moon, fireflies, glitter) only fade, so they stay bright at night. The game starts mid-morning.
-- **Scene changes:** every 5 minutes, or when you press C, the scene fades to black and the next one fades in. Every frame of every scene is loaded once at boot, so nothing loads during play.
+- **Scene changes:** every 5 minutes, or when you press C, the scene fades to black and the next one fades in. Every frame of every scene is loaded once at boot, so nothing loads during play. The change is spread over several frames so the board never stutters: the fade only dims colours that were already worked out, and while the screen is black the new scene is laid down a few layers per frame and its colours one picture per frame (the night colour tables are worked out once at boot). The fade-in starts when all of it is ready, a few frames later.
 - The tile panels are off (`USE_PANEL 0`) to leave sprites for the scenery. The tiles have their own dark plates.
 
 Sprite budget: the busiest screen (Versus over the rain window at night) shows 80 sprites on one line (the limit is 96). Code: `src/scene.c`.
