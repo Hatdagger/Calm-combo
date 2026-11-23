@@ -30,6 +30,18 @@ jobs:
           done
           echo "all seeds match"
 
+  assets:
+    name: Asset check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pillow
+      - name: Check art and audio against the asset brief
+        run: python3 neogeo-cd/tools/check_assets.py
+
   iso:
     name: Build ISO + MAME CHD (NeoCore)
     runs-on: windows-latest

@@ -27,17 +27,19 @@
 #define MSG_SROW     24
 #define STATUS_SROW  26
 
-/* fix palettes */
-#define PAL_TILE0  1            /* 1..6 tile colours */
-#define PAL_STONE  7
-#define PAL_TEXT   8
-#define PAL_DIM    9
-#define PAL_P1     10
-#define PAL_P2     11
-#define PAL_GOOD   12
-#define PAL_BAD    13
-#define PAL_LEVER  14
-#define PAL_HOT    15
+/* fix palettes (NeoCore reserves 0 and 1 for the system) */
+#define PAL_FIRST  2
+#define PAL_TILE0  2            /* 2..7 tile colours */
+#define PAL_STONE  8
+#define PAL_TEXT   9
+#define PAL_DIM    10
+#define PAL_P1     11
+#define PAL_P2     12
+#define PAL_GOOD   13
+#define PAL_BAD    14
+#define PAL_LEVER  15
+#define PAL_HOT    PAL_TEXT
+#define NUM_FIXPAL 14
 
 #define SPR_PAL_LOGO 16
 #define SPR_LOGO     1
@@ -84,27 +86,26 @@ static WORD ng_rgb(WORD r, WORD g, WORD b)
                   ((r >> 1) << 8) | ((g >> 1) << 4) | (b >> 1));
 }
 
-static const BYTE FIXCOL[15][3] = {
+static const BYTE FIXCOL[NUM_FIXPAL][3] = {
     { 0xff, 0x8f, 0x87 }, { 0x7c, 0xc4, 0xff }, { 0x7f, 0xe0, 0xa8 },   /* tiles */
     { 0xff, 0xe0, 0x8a }, { 0xc6, 0xa8, 0xff }, { 0xff, 0xb6, 0x7c },
     { 0x85, 0x7c, 0x95 },                                               /* stone */
     { 0xf3, 0xec, 0xff }, { 0xa9, 0x9b, 0xc4 },                         /* text, dim */
     { 0xff, 0xe7, 0xa8 }, { 0xa8, 0xec, 0xff },                         /* 1P, 2P */
-    { 0x9f, 0xf0, 0xc0 }, { 0xff, 0xb0, 0xb8 }, { 0xff, 0xc2, 0xe8 },   /* good, bad, lever */
-    { 0xff, 0xff, 0xff }                                                /* hot */
+    { 0x9f, 0xf0, 0xc0 }, { 0xff, 0xb0, 0xb8 }, { 0xff, 0xc2, 0xe8 }    /* good, bad, lever */
 };
-static WORD fixpal[15 * 16];
+static WORD fixpal[NUM_FIXPAL * 16];
 
 static void load_palettes(void)
 {
     int p, k;
     WORD c;
-    for (p = 0; p < 15; p++) {
+    for (p = 0; p < NUM_FIXPAL; p++) {
         c = ng_rgb(FIXCOL[p][0], FIXCOL[p][1], FIXCOL[p][2]);
         fixpal[p * 16] = 0;
         for (k = 1; k < 16; k++) fixpal[p * 16 + k] = c;
     }
-    palJobPut(1, 15, fixpal);
+    palJobPut(PAL_FIRST, NUM_FIXPAL, fixpal);
 }
 
 /* scene backdrop: day colour drifting to night and back over 10 minutes */
