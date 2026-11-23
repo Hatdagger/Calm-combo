@@ -30,11 +30,12 @@ The full game runs on the Neo Geo's text (fix) layer. Each 16×16 tile is a 2×2
 ```
 git clone https://github.com/Hatdagger/calm-combo C:\cc
 cd C:\cc\neogeo-cd\src
+mak lib
 mak sprite
 mak
 mak run:mame
 ```
-The first run downloads the compiler, MAME and Raine. MAME needs a Neo Geo CDZ BIOS (`neocdz.zip`), which you supply yourself.
+The first run downloads the compiler, MAME and Raine. `mak lib` (building the NeoCore library) is only needed once. MAME needs a Neo Geo CDZ BIOS (`neocdz.zip`), which you supply yourself.
 
 ## Board rules
 `src/board.c` / `board.h` hold the rules in plain C89 with no floats. `test/` checks them against `web/index.html`: the same seeded games give identical boards, refills, scores and move counts. This check also runs on every push.
