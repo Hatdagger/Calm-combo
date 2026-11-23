@@ -2,7 +2,22 @@
 
 Built with [NeoCore](https://github.com/David-Vandensteen/neocore), a Neo Geo CD kit using GCC 2.95 and DATlib (vendored in `neocore/`, MIT license).
 
-## Status: milestone 3 (scenes)
+## Status: milestone 4 (sound)
+Every scene now has its song, and the board has its sound effects.
+
+- **Music:** the three songs are CD audio tracks 2–4 (lake, beach, rain window), each with its ambience mixed in: wind at the lake, a wave swell every 9 seconds at the shore (in step with the shoreline animation), heavy rain at the window. The track changes with the scene. **D** pauses and resumes it; if the scene changed while the music was off, the new scene's song starts instead.
+- **Sound effects:** 16 effects on the sound chip: grab, no match, the chain chimes (cascade steps 1–9, each one note higher), LEVER!, extra moves, stones landing, the last seconds of the Versus move timer, and the menu. When two people play, 1P sounds come from the left speaker and 2P from the right; one player alone is centred.
+- **Placeholders:** the songs and effects are rendered by `tools/make_audio.py` from the web prototype's own song data (same chords, tempos, form and melodies), so the disc sounds like the prototype. To use your own, see *Your own audio* below.
+- Code: `src/sound.c` (effect queue, CD track control) and the hooks in `src/main.c`.
+
+### Your own audio
+- **Songs:** put a 44.1 kHz 16-bit stereo WAV named `track02_lakeside.wav`, `track03_shoreline.wav` or `track04_rain.wav` in `src/assets/cdda/` (on GitHub: *Add file → Upload files*). Make it at least 5 minutes, the length of a scene. Any track you don't supply is generated during the build.
+- **Effects:** replace a file in `src/assets/sfx/` with a mono 16-bit WAV of the same name, under 2 seconds. 18,500 Hz is ideal; other rates are converted. The build encodes them for the sound chip.
+- Everything is checked and built on every push. To build the sound files on your own PC: `python tools/make_audio.py` (needs Python with numpy and scipy).
+
+How the effects work: the sound chip (YM2610) plays 4-bit ADPCM-A samples. `tools/make_audio.py` encodes `sfx/*.wav` into `src/assets/sounds/calm.pcm` and writes the sample table into `calm.z80`, the Z80 sound driver from NGFX SoundBuilder (taken from NeoCore's soundFX_poly sample, MIT). Each effect has three driver commands (left, centre, right), and the game sends one command per frame. The effects use 96 KB of the 512 KB budget.
+
+## Milestone 3 (scenes)
 The three scenes now play behind the boards, built from the art in `src/assets/gfx/` (lake, beach, window, common).
 
 - **Mountain lake:** sky, two mountain ridges that drift at different speeds and wrap around, shimmering water, and fireflies at night.
@@ -28,7 +43,7 @@ Not yet: `<name>_night.png` recoloured copies are not used yet. Night is the aut
 | A | Grab / drop |
 | B | Cancel |
 | C | Next scene |
-| D | Music on/off |
+| D | Music on/off (pauses the CD track) |
 | Start | Join / retry |
 | Select | Back to the menu |
 
@@ -46,8 +61,10 @@ mak run:mame
 ```
 The first run downloads the compiler, MAME and Raine. `mak lib` (building the NeoCore library) is only needed once. MAME needs a Neo Geo CDZ BIOS (`neocdz.zip`), which you supply yourself.
 
+Before `mak`, run `python ..\tools\make_audio.py` once to make the CD tracks (they are not stored in the repo because they are about 60 MB each). For `mak dist:iso`, also copy `assets\cdda\*.wav` into `..\build\CalmCombo\assets\cdda\`, because NeoCore reads them from there.
+
 ## Testing without the console
-`test/frontend.c` runs the real `main.c` on a PC against stand-in hardware. Scripts play the game (`test/tour.txt`: title, Score Attack, 2P drop-in, Versus; `test/scenes.txt`: every scene by day and night, a scene change and the busiest Versus screen) and snapshot the sprites and text, and `test/render_frames.py` draws those snapshots with the real art. It also fails if a frame would overflow DATlib's sprite list or a scanline goes over 96 sprites.
+`test/frontend.c` runs the real `main.c` (and `sound.c`) on a PC against stand-in hardware. Every sound command and CD track change is logged to `sounds.txt`, and the tour checks that the expected effects played. Scripts play the game (`test/tour.txt`: title, Score Attack, 2P drop-in, Versus; `test/scenes.txt`: every scene by day and night, a scene change and the busiest Versus screen) and snapshot the sprites and text, and `test/render_frames.py` draws those snapshots with the real art. It also fails if a frame would overflow DATlib's sprite list or a scanline goes over 96 sprites.
 
 ```
 sh test/build_frontend.sh
@@ -70,6 +87,5 @@ gcc -std=c89 -pedantic -Wall -O2 -o sim src/board.c test/sim.c
 - NeoCore is built for Neo Geo CD. It makes ISO/CUE and CHD files, supports CD audio tracks (track 1 is the program), and its scripts are Windows PowerShell.
 
 ## Next milestones
-4. Audio: render the three lo-fi songs to CD tracks 2–4, and add sound effects on the Z80/ADPCM chip.
 5. Test on real hardware: a burned CD-R or an SD loader.
 6. Later: use `_night.png` copies, survival pacing, hint ghost, tutorial, Puzzle mode, CPU Versus, high-score initials.

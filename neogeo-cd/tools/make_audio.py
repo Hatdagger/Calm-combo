@@ -220,7 +220,7 @@ def render_song(k):
 
 
 def write_wav(path, x, rate):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     x = np.clip(np.round(x * 32767), -32768, 32767).astype('<i2')
     w = wave.open(path, 'wb')
     w.setnchannels(1 if x.ndim == 1 else x.shape[1])

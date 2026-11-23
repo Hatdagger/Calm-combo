@@ -8,4 +8,6 @@ The game uses every image here now (milestone 3), except `board/panel.png`, whic
 - Rebuild the samples: `python3 neogeo-cd/tools/make_samples.py` (this overwrites your art, so only use it to start over).
 - Preview the scenes: `python3 neogeo-cd/tools/preview.py OUTDIR`.
 
-Credits: `gfx/font/font.png` is recoloured from NeoCore's `samples/custom_fix/font0.png` (MIT license, David Vandensteen).
+Audio (milestone 4): `sfx/` holds the 16 sound effects and `cdda/` the three songs. The effect WAVs in the repo are placeholders; the songs are generated during the build unless you upload your own. `sounds/` is built from them by `neogeo-cd/tools/make_audio.py`, so don't edit it by hand. See `neogeo-cd/README.md` for the formats.
+
+Credits: `gfx/font/font.png` is recoloured from NeoCore's `samples/custom_fix/font0.png` and `sounds/ngfx_driver.z80` is the NGFX SoundBuilder driver from NeoCore's `samples/soundFX_poly` (MIT license, David Vandensteen).
