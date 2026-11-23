@@ -15,7 +15,6 @@ typedef struct picture {
     int shown;
 } picture;
 extern ushort LSPCmode;
-extern unsigned int DAT_droppedFrames;
 #define FLIP_NONE 0
 #define SPR_LINK   0x0040
 #define SPR_UNLINK 0x0000

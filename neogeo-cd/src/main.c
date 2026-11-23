@@ -821,27 +821,6 @@ static void side_input(Side *s, BYTE edge, BYTE rep, BYTE start)
     if ((edge & JOY_B) && s->held) { s->held = 0; s->has_t = 0; }
 }
 
-/* ---------- lag meter (testing) ---------- */
-
-/*
- * "LAG n" on the top line: video frames the game missed in the last second
- * because a pass of the main loop took too long (DATlib counts them).
- * Blank when there were none.
- */
-static void lag_meter(void)
-{
-    static DWORD last;
-    static WORD tick;
-    DWORD d;
-    if (++tick < 60) return;
-    tick = 0;
-    d = DAT_droppedFrames - last;
-    last = DAT_droppedFrames;
-    if (d > 99) d = 99;
-    if (d) { put(13, 0, PAL_BAD, "LAG"); put_num(17, 0, PAL_BAD, d, 2); }
-    else put(13, 0, PAL_BAD, "      ");
-}
-
 /* ---------- joypads ---------- */
 
 /*
@@ -912,7 +891,6 @@ int main(void)
         if (frames % SCENE_FRAMES == 0) play_scene_song();
 
         put(1, 0, PAL_DIM, SCENE_NAME[scene_shown()]);
-        lag_meter();
         put(27, 0, PAL_DIM, "BEST");
         put_num(32, 0, PAL_TEXT, best, 7);
 
