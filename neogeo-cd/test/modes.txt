@@ -1,0 +1,120 @@
+# Tutorial, Puzzle mode and the high-score table.
+wait 20
+# title menu: down to HOW TO PLAY
+p1 D
+p1 D
+p1 D
+wait 2
+dump m01_menu
+p1 A
+wait 14
+idle 1
+state 2 OFF
+dump m02_lesson1
+solve 1 m03_lesson1_held
+idle 1
+state 1 SOLVED
+dump m04_lesson1_done
+wait 60
+p1 A
+idle 1
+dump m05_lesson2
+solve 1
+idle 1
+state 1 SOLVED
+wait 60
+p1 A
+idle 1
+dump m06_lesson3
+solve 1
+idle 1
+solve 1
+idle 1
+solve 1
+idle 1
+state 1 SOLVED
+wait 60
+p1 A
+idle 1
+dump m07_lesson4
+solve 1
+idle 1
+solve 1
+idle 1
+solve 1
+idle 1
+state 1 SOLVED
+dump m08_lesson4_done
+wait 60
+p1 A
+wait 4
+# back on the title; puzzle 1 (menu: up twice from HOW TO PLAY)
+p1 U
+wait 2
+dump m09_menu_puzzle
+p1 A
+wait 14
+idle 1
+dump m10_puzzle1
+solve 1
+idle 1
+state 1 SOLVED
+sounds save
+dump m11_puzzle1_solved
+wait 60
+p1 A
+idle 1
+dump m12_puzzle2
+# a move that doesn't break the stones, twice: out of moves
+auto 1
+idle 1
+auto 1
+idle 1
+state 1 FAILED
+dump m13_puzzle2_failed
+wait 60
+p1 A
+idle 1
+state 1 IDLE
+solve 1
+idle 1
+solve 1
+idle 1
+state 1 SOLVED
+# Score Attack to a high score, then initials
+p1 SELECT
+wait 4
+p1 U
+p1 U
+wait 2
+p2 A
+wait 14
+idle 2
+score 2 4321
+moves 2 1
+auto 2
+idle 2
+wait 30
+state 2 NAME
+dump m14_name_entry
+wait 60
+p2 U
+p2 U
+p2 A
+p2 D
+p2 A
+p2 A
+wait 4
+state 2 OVER
+dump m15_saved
+p2 SELECT
+wait 4
+p1 U
+wait 2
+p1 A
+wait 4
+dump m16_high_scores
+sounds save
+p1 B
+wait 4
+end

@@ -2,7 +2,17 @@
 
 Built with [NeoCore](https://github.com/David-Vandensteen/neocore), a Neo Geo CD kit using GCC 2.95 and DATlib (vendored in `neocore/`, MIT license).
 
-## Status: milestone 4 (sound)
+## Status: milestone 5 (tutorial, Puzzle mode, high scores)
+The title menu now has five entries: **Score Attack**, **Versus**, **Puzzle**, **How to play** and **High scores**. Up/down picks one, A or Start begins. Whoever presses plays, so 2P starts a puzzle on the right-hand board.
+
+- **How to play:** four short lessons on one board, with the instructions on the other half of the screen. 1: slide a line into a match. 2: the lever (the tile you move doesn't need to be in the match). 3: chains (make a match that drops tiles into a second one, 3 tries). 4: stones (break both stones in 3 moves). A wrong move just resets the lesson. After lesson 4 it goes back to the menu.
+- **Puzzle mode:** 12 fixed boards. Break every stone within the move count shown (1 move for puzzle 1, then 2, then 3 from puzzle 6). The refills are fixed too, so every try plays out exactly the same way. Puzzles open one at a time. On the menu, left/right picks any open puzzle, and a **\*** marks the solved ones. **Start** during a puzzle starts it over. Bonus moves from combos don't count here: the move count is the move count.
+- **High scores:** the top five Score Attack scores with 3-letter initials. Beat the 5th place and you enter your initials when the game ends: up/down changes the letter, A or right moves on, B or left goes back. *High scores* on the menu shows the table. BEST on the top line is the table's top score.
+- **Saving:** the high scores and solved puzzles are kept in the Neo Geo CD's built-in backup memory (the BIOS "memory card"), through the BIOS CARD call. It's one 64-byte save under NeoCore's game number 0x7777, save 0, marked "CC01" with a checksum, so other data there is ignored. It is never formatted from here. If saving fails, the High scores screen shows `NOT SAVED: ERROR nn`. Saving hasn't been tried on real hardware yet.
+- The boards are made by `test/puzzle_gen.c`, which plays every possible move sequence (with the real rules and refills). CI checks each board on every push: it must start with no match, be solvable within its moves, and (Puzzle mode) not be solvable in fewer. Puzzle 1 is solved by 17 of its 114 possible moves. Puzzle 12 is solved by 4 of about 416,000 three-move sequences.
+- Code: `src/puzzle.c` (loading a board), `src/puzzles.h` (the boards, generated), `src/save.c`, and the flow in `src/main.c`.
+
+## Milestone 4 (sound)
 Every scene now has its song, and the board has its sound effects.
 
 - **Music:** the three songs are CD audio tracks 2–4 (lake, beach, rain window), each with its ambience mixed in: wind at the lake, a wave swell every 9 seconds at the shore (in step with the shoreline animation), heavy rain at the window. The track changes with the scene. **D** pauses and resumes it; if the scene changed while the music was off, the new scene's song starts instead.
@@ -46,12 +56,13 @@ Every scene picture can have a hand-painted night copy next to it, for example `
 ### Controls
 | Button | Action |
 |---|---|
+| Title menu | Up/down to pick, left/right for the puzzle number, A or Start to begin |
 | Stick | Move the cursor. While holding a tile, slide it along its row or column |
 | A | Grab / drop |
 | B | Cancel |
 | C | Next scene |
 | D | Music on/off (pauses the CD track) |
-| Start | Join / retry |
+| Start | Join / retry (in a puzzle: start it over) |
 | Select | Back to the menu |
 
 ## Getting a disc image
@@ -71,7 +82,7 @@ The first run downloads the compiler, MAME and Raine. `mak lib` (building the Ne
 Before `mak`, run `python ..\tools\make_audio.py` once to make the CD tracks (they are not stored in the repo because they are about 60 MB each). For `mak dist:iso`, also copy `assets\cdda\*.wav` into `..\build\CalmCombo\assets\cdda\`, because NeoCore reads them from there.
 
 ## Testing without the console
-`test/frontend.c` runs the real `main.c` (and `sound.c`) on a PC against stand-in hardware. Every sound command and CD track change is logged to `sounds.txt`, and the tour checks that the expected effects played. Scripts play the game (`test/tour.txt`: title, Score Attack, 2P drop-in, Versus; `test/scenes.txt`: every scene by day and night, a scene change and the busiest Versus screen) and snapshot the sprites and text, and `test/render_frames.py` draws those snapshots with the real art. It also fails if a frame would overflow DATlib's sprite list or a scanline goes over 96 sprites.
+`test/frontend.c` runs the real `main.c` (and `sound.c`) on a PC against stand-in hardware. Every sound command and CD track change is logged to `sounds.txt`, and the tour checks that the expected effects played. Scripts play the game (`test/tour.txt`: title, Score Attack, 2P drop-in, Versus; `test/scenes.txt`: every scene by day and night, a scene change and the busiest Versus screen; `test/modes.txt`: all four lessons, puzzles 1 and 2 including a failed try, and a high score with initials entry, checked against a fake backup memory) and snapshot the sprites and text, and `test/render_frames.py` draws those snapshots with the real art. It also fails if a frame would overflow DATlib's sprite list or a scanline goes over 96 sprites.
 
 ```
 sh test/build_frontend.sh
@@ -93,6 +104,8 @@ gcc -std=c89 -pedantic -Wall -O2 -o sim src/board.c test/sim.c
 - ngdevkit targets cartridges (AES/MVS) only, so it can't build a Neo Geo CD disc.
 - NeoCore is built for Neo Geo CD. It makes ISO/CUE and CHD files, supports CD audio tracks (track 1 is the program), and its scripts are Windows PowerShell.
 
+To make new puzzle boards (a few minutes): `gcc -std=c89 -O2 -Isrc -o pgen src/board.c test/puzzle_gen.c && ./pgen > src/puzzles.h`. To check them: build with `-DCHECK` and `src/puzzle.c` added, as in the CI job.
+
 ## Next milestones
-5. Test on real hardware: a burned CD-R or an SD loader.
-6. Later: survival pacing, hint ghost, tutorial, Puzzle mode, CPU Versus, high-score initials.
+6. Test milestone 5 on real hardware, especially saving.
+7. Later: survival pacing, hint ghost, CPU Versus, more puzzles.

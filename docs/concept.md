@@ -60,6 +60,6 @@ Calm Combo (chosen for now), Drift, Lull, Tidepool, Slow Tide, Stillwater, Unwin
 
 ## Later (not committed)
 - More scenes (city rooftop at night, snowy cabin, forest stream), each with its own song.
-- Hint ghost after idle, opening tutorial puzzles, Puzzle mode (fixed boards, solve in N moves).
+- Hint ghost after idle. (The tutorial and Puzzle mode are now in the Neo Geo CD version.)
 - CPU opponent for solo Versus.
-- Initials entry on the high-score table, saved to the console's internal save memory.
+- Initials entry on the high-score table, saved to the console's internal save memory (now in the Neo Geo CD version).

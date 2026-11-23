@@ -20,7 +20,14 @@
  *   dump NAME          snapshot to OUTDIR/NAME.txt
  *   clock S            set the game clock to S seconds (scene = S / 300 % 3,
  *                      time of day = S % 600: sun up for 0-299, moon after)
- *   sounds NAME...     fail unless each named effect (or "cdda") has played
+ *   sounds NAME...     fail unless each named effect (or "cdda") has played;
+ *                      "save" checks the game has saved at least once
+ *   solve P [NAME]     puzzle / lesson: player P makes the first move of a
+ *                      solution (snapshot NAME while the tile is held)
+ *   state P NAME       fail unless player P's board is in that state
+ *                      (IDLE OVER SOLVED FAILED NAME OFF JOIN)
+ *   score P N / moves P N   set player P's score / moves (to reach a high
+ *                      score or game over quickly)
  *   end
  *
  * Every sound command and CD track change is logged to OUTDIR/sounds.txt.
@@ -45,6 +52,11 @@ static void stub_cdda(int op, BYTE track);
 #define CDDA_PAUSE()   stub_cdda(1, 0)
 #define CDDA_RESUME()  stub_cdda(2, 0)
 #include "sound.c"
+
+/* save.c, with the BIOS CARD call going to a fake backup memory */
+static BYTE stub_card(BYTE cmd, BYTE *buf);
+#define SAVE_CARD(cmd, buf) stub_card((cmd), (buf))
+#include "save.c"
 
 unsigned char stub_in[8];
 ushort LSPCmode;
@@ -123,6 +135,26 @@ static void stub_cdda(int op, BYTE track)
         cdda_plays++;
     }
     if (sndlog) fprintf(sndlog, "%ld cdda %s %d\n", frame, op == 0 ? "play" : op == 1 ? "pause" : "resume", track);
+}
+
+/* fake backup memory: empty at boot (the BIOS answers "no such save") */
+static BYTE card_mem[64];
+static int card_has, card_saves;
+static BYTE stub_card(BYTE cmd, BYTE *buf)
+{
+    if (cmd == 2) {
+        if (!card_has) return 0x82;
+        memcpy(buf, card_mem, 64);
+        return 0;
+    }
+    if (cmd == 3) {
+        memcpy(card_mem, buf, 64);
+        card_has = 1;
+        card_saves++;
+        if (sndlog) fprintf(sndlog, "%ld save\n", frame);
+        return 0;
+    }
+    return 0x80;
 }
 
 void stub_bg(WORD c) { bg = c; }
@@ -249,6 +281,67 @@ static BYTE key(const char *k, BYTE *sys, int pl)
     return 0;
 }
 
+/* queue the presses for one move: cursor to (r, c), grab, slide to t, drop */
+static void queue_move(int pl, int r, int c, int ax, int t, const char *shot)
+{
+    Side *s = &side[pl - 1];
+    int k, cr = s->cr, cc = s->cc;
+    while (cr < r) { push(pl, JOY_DOWN, 0, 0); cr++; }
+    while (cr > r) { push(pl, JOY_UP, 0, 0); cr--; }
+    while (cc < c) { push(pl, JOY_RIGHT, 0, 0); cc++; }
+    while (cc > c) { push(pl, JOY_LEFT, 0, 0); cc--; }
+    push(pl, JOY_A, 0, 0);
+    k = ax == CC_AXIS_H ? c : r;
+    while (k != t) {
+        push(pl, (BYTE)(ax == CC_AXIS_H ? (t > k ? JOY_RIGHT : JOY_LEFT) : (t > k ? JOY_DOWN : JOY_UP)), 0, 0);
+        k += t > k ? 1 : -1;
+    }
+    for (k = 0; k < 6; k++) push(pl, 0, 0, 0);      /* let the slide glide */
+    push(pl, JOY_A, 0, shot);
+}
+
+/* would this move (and up to depth-1 more) meet the puzzle's goal? */
+static int pz_wins(const cc_board *b, int r, int c, int ax, int t, int depth, int goal)
+{
+    cc_board w = *b;
+    cc_step st;
+    int lever = 0, chain = 0, r2, c2, ax2, t2;
+    if (!cc_commit(&w, r, c, ax, t)) return 0;
+    while (cc_resolve_step(&w, &st)) {
+        if (st.lever) lever = 1;
+        if (st.chain > chain) chain = st.chain;
+        cc_gravity(&w, &st);
+    }
+    cc_resolve_end(&w, (cc_board *)0);
+    if (goal == PZ_MATCH || (goal == PZ_LEVER && lever) || (goal == PZ_CHAIN && chain >= 2) ||
+        (goal == PZ_STONES && !cc_count_stones(&w))) return 1;
+    if (depth <= 1) return 0;
+    for (r2 = 0; r2 < CC_ROWS; r2++)
+        for (c2 = 0; c2 < CC_COLS; c2++)
+            for (ax2 = 0; ax2 < 2; ax2++)
+                for (t2 = 0; t2 < (ax2 == CC_AXIS_H ? CC_COLS : CC_ROWS); t2++)
+                    if (t2 != (ax2 == CC_AXIS_H ? c2 : r2) && pz_wins(&w, r2, c2, ax2, t2, depth - 1, goal)) return 1;
+    return 0;
+}
+
+static void solve_move(int pl, const char *shot)
+{
+    Side *s = &side[pl - 1];
+    int r, c, ax, t;
+    if (s->state != ST_IDLE) return;              /* already solved: nothing to do */
+    for (r = 0; r < CC_ROWS; r++)
+        for (c = 0; c < CC_COLS; c++)
+            for (ax = 0; ax < 2; ax++)
+                for (t = 0; t < (ax == CC_AXIS_H ? CC_COLS : CC_ROWS); t++)
+                    if (t != (ax == CC_AXIS_H ? c : r) &&
+                        pz_wins(&s->b, r, c, ax, t, s->pz_left, cur_puzzle()->goal)) {
+                        queue_move(pl, r, c, ax, t, shot);
+                        return;
+                    }
+    fprintf(stderr, "frame %ld: no solving move for player %d\n", frame, pl);
+    exit(2);
+}
+
 /* find a valid move for player pl and queue the button presses for it */
 static void auto_move(int pl, const char *shot)
 {
@@ -318,6 +411,7 @@ void waitVBlank(void)
             int id;
             for (w = strtok(w, " \t\r\n"); w; w = strtok(0, " \t\r\n")) {
                 if (!strcmp(w, "cdda")) { if (!cdda_plays) { fprintf(stderr, "no CD track was started\n"); exit(4); } continue; }
+                if (!strcmp(w, "save")) { if (!card_saves) { fprintf(stderr, "frame %ld: the game never saved\n", frame); exit(4); } continue; }
                 for (id = 0; id < SND_COUNT && strcmp(w, snd_name[id]); id++) ;
                 if (id == SND_COUNT) { fprintf(stderr, "unknown sound %s\n", w); exit(2); }
                 if (!snd_heard[id]) { fprintf(stderr, "frame %ld: sound %s never played\n", frame, w); exit(4); }
@@ -329,6 +423,23 @@ void waitVBlank(void)
             pl = cmd[1] - '0';
             k = key(arg, &sys, pl);
             push(pl, k, sys, 0);
+        } else if (!strcmp(cmd, "solve")) {
+            char shot[64] = "";
+            sscanf(line, "%*s %d %63s", &pl, shot);
+            solve_move(pl, shot[0] ? shot : 0);
+        } else if (!strcmp(cmd, "state")) {
+            static const char *NAMES[] = { "JOIN", "IDLE", "PRE", "POP", "FALL", "SHUFFLE", "OVER", "RESULT",
+                                           "OFF", "SOLVED", "FAILED", "NAME" };
+            char want[32];
+            sscanf(line, "%*s %d %31s", &pl, want);
+            if (strcmp(NAMES[side[pl - 1].state], want)) {
+                fprintf(stderr, "frame %ld: player %d is %s, expected %s\n", frame, pl, NAMES[side[pl - 1].state], want);
+                exit(4);
+            }
+        } else if (!strcmp(cmd, "score") || !strcmp(cmd, "moves")) {
+            long v = 0;
+            sscanf(line, "%*s %d %ld", &pl, &v);
+            if (cmd[0] == 's') side[pl - 1].b.score = v; else side[pl - 1].b.moves = (cc_s16)v;
         } else if (!strcmp(cmd, "auto")) {
             char shot[64] = "";
             sscanf(line, "%*s %d %63s", &pl, shot);

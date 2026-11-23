@@ -29,6 +29,11 @@ jobs:
             cmp c.txt j.txt || { echo "seed $s differs"; diff c.txt j.txt | head; exit 1; }
           done
           echo "all seeds match"
+      - name: Tutorial and Puzzle mode boards are solvable (and not in fewer moves)
+        working-directory: neogeo-cd
+        run: |
+          gcc -std=c89 -pedantic -Wall -Wextra -Werror -O2 -Isrc -DCHECK -o pcheck src/board.c src/puzzle.c test/puzzle_gen.c
+          ./pcheck
 
   frontend:
     name: Front end smoke test + screenshots (PC)
@@ -51,6 +56,7 @@ jobs:
           mkdir -p shots
           build-pc/frontend test/tour.txt shots
           build-pc/frontend test/scenes.txt shots
+          build-pc/frontend test/modes.txt shots
           python3 test/render_frames.py shots --sheet shots/00_sheet.png
       - uses: actions/upload-artifact@v4
         with:

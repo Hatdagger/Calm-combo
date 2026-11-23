@@ -6,9 +6,10 @@ set -e
 cd "$(dirname "$0")/.."
 B=${1:-build-pc}
 mkdir -p "$B"
-cp src/main.c src/scene.c src/scene.h src/board.h src/sound.c src/sound.h src/sound_ids.h src/night_maps.h "$B/"
+cp src/main.c src/scene.c src/scene.h src/board.h src/sound.c src/sound.h src/sound_ids.h src/night_maps.h src/puzzle.h src/save.c src/save.h "$B/"
 CF="-std=c89 -pedantic -Wall -Wextra -Werror -O2 -Itest/stubs"
 gcc $CF -I"$B" -c src/board.c -o "$B/board.o"
+gcc $CF -I"$B" -Isrc -c src/puzzle.c -o "$B/puzzle.o"
 gcc $CF -I"$B" -c test/frontend.c -o "$B/frontend.o"   # includes main.c
-gcc -o "$B/frontend" "$B/board.o" "$B/frontend.o"
+gcc -o "$B/frontend" "$B/board.o" "$B/puzzle.o" "$B/frontend.o"
 echo "built $B/frontend"

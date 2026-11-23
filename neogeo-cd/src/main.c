@@ -1,6 +1,11 @@
 /*
  * Calm Combo - Neo Geo CD
  *
+ * Milestone 5: a tutorial (4 lessons), Puzzle mode (12 fixed boards: break
+ * every stone in N moves) and a high-score table with initials, saved in
+ * the console's backup memory (save.c).  Puzzles and lessons use one board;
+ * the other half of the screen explains what to do.
+ *
  * Milestone 4: sound.  Each scene has its own song on the disc (CD tracks
  * 2-4) and the board plays the 16 sound effects on the sound chip (sound.c).
  *
@@ -21,6 +26,8 @@
 #include "board.h"
 #include "scene.h"
 #include "sound.h"
+#include "puzzle.h"
+#include "save.h"
 
 /*
  * Soft plate behind each board.  Off: the scenery needs those sprites (each
@@ -81,8 +88,15 @@ static const short BX0[2] = { 24, 168 };   /* board left, pixels */
 #define F_BUFFER   20             /* an A press while the board is busy is kept this long */
 #define FALL_MAX   9            /* fall speed cap, pixels per frame */
 
-enum { ST_JOIN, ST_IDLE, ST_PRE, ST_POP, ST_FALL, ST_SHUFFLE, ST_OVER, ST_RESULT };
-enum { MODE_SCORE, MODE_VS };
+enum { ST_JOIN, ST_IDLE, ST_PRE, ST_POP, ST_FALL, ST_SHUFFLE, ST_OVER, ST_RESULT,
+       ST_OFF,                    /* puzzle / lesson: this half shows the instructions */
+       ST_SOLVED, ST_FAILED,      /* puzzle / lesson result */
+       ST_NAME };                 /* entering initials for the high-score table */
+enum { MODE_SCORE, MODE_VS, MODE_PUZZLE, MODE_TUTOR };
+#define IS_PUZZLE (mode >= MODE_PUZZLE)
+
+/* title menu */
+enum { MENU_SCORE, MENU_VS, MENU_PUZZLE, MENU_TUTOR, MENU_SCORES, MENU_N };
 
 /* one on-screen tile; the board maps each cell to one of these */
 typedef struct {
@@ -109,11 +123,20 @@ typedef struct {
     short cux, cuy;               /* cursor sprite position */
     BYTE  moving;                 /* something was still gliding last frame */
     BYTE  buf_a;                  /* passes left on an A press made while busy */
+    BYTE  pz_left;                /* puzzle / lesson: moves left */
+    BYTE  got_lever, max_chain;   /* lesson goals seen during the last move */
+    char  name[4];                /* initials being entered */
+    BYTE  name_pos;
+    BYTE  rank;                   /* high-score place taken (0..4), 0xff none */
 } Side;
 
 static Side   side[2];
 static BYTE   mode = MODE_SCORE, in_title = 1, menu_sel = 0, music_on = 1;
 static BYTE   track_on = 0;       /* CD track started last (0: none yet)  */
+static BYTE   show_scores = 0;    /* title: the high-score table is up    */
+static BYTE   pz_idx = 0;         /* puzzle or lesson being played        */
+static BYTE   pz_sel = 0;         /* puzzle picked on the title menu      */
+static BYTE   save_due = 0;       /* write the save at the top of the next frame */
 /* the clock starts 50 s into the day: mid-morning at the lake */
 static DWORD  best = 0, frames = 3000, seed_mix = 0x1234567UL;
 static picture logo;
@@ -314,6 +337,17 @@ static void put_num(int x, int srow, int pal, DWORD v, int width)
     put(x, srow, pal, buf);
 }
 
+/* text padded with spaces to width w, so shorter text replaces longer */
+static void put_pad(int x, int srow, int pal, const char *s, int w)
+{
+    char b[24];
+    int k = 0;
+    while (s[k] && k < w && k < 23) { b[k] = s[k]; k++; }
+    while (k < w && k < 23) b[k++] = ' ';
+    b[k] = 0;
+    put(x, srow, pal, b);
+}
+
 static void str_copy(char *d, const char *s, int max)
 {
     int k = 0;
@@ -435,7 +469,7 @@ static void render_side(Side *s)
     WORD pal, spr;
     Obj *o;
 
-    if (in_title || s->state == ST_JOIN) { hide_side(s); s->moving = 0; return; }
+    if (in_title || s->state == ST_JOIN || s->state == ST_OFF) { hide_side(s); s->moving = 0; return; }
 
     ids = s->oid;
     cols = s->b.g;
@@ -520,10 +554,72 @@ static void show_panels(BYTE on)
 
 /* ---------- HUD ---------- */
 
+static const char *LESSON_NAME[4] = { "SLIDE A LINE", "THE LEVER", "CHAINS", "STONES" };
+static const char *ORDINAL[HS_N] = { "1ST", "2ND", "3RD", "4TH", "5TH" };
+
+static const cc_puzzle *cur_puzzle(void)
+{
+    return mode == MODE_TUTOR ? &CC_TUTORIAL[pz_idx] : &CC_PUZZLES[pz_idx];
+}
+
+static void put_2(int x, int srow, int pal, int v) { put_num(x, srow, pal, (DWORD)v, 2); }
+
+/* puzzle / lesson HUD on the playing side */
+static void draw_hud_puzzle(Side *s)
+{
+    int x = s->col0, st = cc_count_stones(&s->b);
+    if (mode == MODE_TUTOR) {
+        put(x, HUD_SCORE, PAL_P1 + s->i, "LESSON");
+        put_num(x + 7, HUD_SCORE, PAL_TEXT, (DWORD)(pz_idx + 1), 1);
+        put(x + 8, HUD_SCORE, PAL_DIM, "/4     ");
+    } else {
+        put(x, HUD_SCORE, PAL_P1 + s->i, "PUZZLE");
+        put_2(x + 7, HUD_SCORE, PAL_TEXT, pz_idx + 1);
+        put(x + 9, HUD_SCORE, PAL_DIM, "/");
+        put_2(x + 10, HUD_SCORE, PAL_DIM, CC_NUM_PUZZLES);
+        put(x + 12, HUD_SCORE, PAL_TEXT, "    ");
+    }
+    put(x, HUD_MOVES, PAL_TEXT, "MOVES");
+    put_2(x + 6, HUD_MOVES, s->pz_left <= 1 ? PAL_BAD : PAL_GOOD, s->pz_left);
+    put(x + 8, HUD_MOVES, PAL_TEXT, "        ");
+    if (cur_puzzle()->goal == PZ_STONES) {
+        put(x, HUD_STONES, PAL_STONE, "STONES");
+        put_2(x + 7, HUD_STONES, st ? PAL_TEXT : PAL_GOOD, st);
+    } else {
+        put(x, HUD_STONES, PAL_TEXT, "         ");
+    }
+}
+
+/* the empty half during a puzzle or lesson: what to do */
+static void draw_info(Side *s)
+{
+    const cc_puzzle *pz = cur_puzzle();
+    int x = s->i ? 21 : 2, k;
+    static const char *PUZ[PZ_LINES] = { "BREAK EVERY STONE", "", "MATCHES NEXT TO A", "STONE BREAK IT.", "", "START: TRY AGAIN" };
+    if (mode == MODE_TUTOR) {
+        put(x, HUD_SCORE, PAL_LEVER, "HOW TO PLAY");
+        put_pad(x, HUD_MOVES, PAL_P1, LESSON_NAME[pz_idx], PZ_LINE_LEN);
+        for (k = 0; k < PZ_LINES; k++) put_pad(x, 10 + k * 2, PAL_TEXT, pz->text[k], PZ_LINE_LEN);
+    } else {
+        put(x, HUD_SCORE, PAL_LEVER, "PUZZLE MODE");
+        for (k = 0; k < PZ_LINES; k++) {
+            if (k == 1) {
+                put(x, 10 + k * 2, PAL_TEXT, "WITHIN");
+                put_num(x + 7, 10 + k * 2, PAL_GOOD, pz->moves, 1);
+                put(x + 9, 10 + k * 2, PAL_TEXT, pz->moves == 1 ? "MOVE." : "MOVES.");
+            } else {
+                put(x, 10 + k * 2, k == 5 ? PAL_DIM : PAL_TEXT, PUZ[k]);
+            }
+        }
+        put_pad(x, HUD_MOVES, PAL_GOOD, (pz_solved >> pz_idx) & 1 ? "SOLVED BEFORE" : "", PZ_LINE_LEN);
+    }
+}
+
 static void draw_hud(Side *s)
 {
     BYTE pcol = (BYTE)(PAL_P1 + s->i);
     int x = s->col0;
+    if (IS_PUZZLE) { draw_hud_puzzle(s); return; }
     put(x, HUD_SCORE, pcol, s->i ? "2P" : "1P");
     if (s->state == ST_JOIN) {
         put(x + 3, HUD_SCORE, PAL_DIM, "             ");
@@ -551,11 +647,30 @@ static void draw_hud(Side *s)
     }
 }
 
+static const char NAME_CHARS[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ.! ";
+#define NAME_NCH 29
+
+static void draw_name_entry(Side *s)
+{
+    int k;
+    char one[2];
+    put(s->col0, MSG_SROW, PAL_GOOD, "NEW HIGH SCORE! ");
+    put(s->col0, STATUS_SROW, PAL_TEXT, "NAME        A=OK");
+    one[1] = 0;
+    for (k = 0; k < 3; k++) {
+        one[0] = s->name[k];
+        if (k == s->name_pos && ((frames >> 3) & 1)) one[0] = '_';
+        put(s->col0 + 5 + k, STATUS_SROW, k == s->name_pos ? PAL_P1 + s->i : PAL_TEXT, one);
+    }
+}
+
 static void draw_side(Side *s)
 {
     BYTE pcol = (BYTE)(PAL_P1 + s->i);
+    if (s->state == ST_OFF) { render_side(s); draw_info(s); return; }
     draw_hud(s);
     render_side(s);
+    if (s->state == ST_NAME) { draw_name_entry(s); return; }
     if (s->state == ST_JOIN) {
         put(s->col0 + 2, BOARD_SROW + 6, pcol, ((frames >> 5) & 1) ? "PRESS START" : "           ");
         put(s->col0, MSG_SROW, PAL_TEXT, "                ");
@@ -566,6 +681,12 @@ static void draw_side(Side *s)
     if (s->msg_t) put(s->col0, MSG_SROW, s->msg_pal, s->msg);
     if (s->state == ST_OVER) {
         put(s->col0, STATUS_SROW, PAL_BAD, "GAME OVER  START");
+    } else if (s->state == ST_SOLVED) {
+        put(s->col0, STATUS_SROW, PAL_GOOD,
+            mode == MODE_TUTOR ? (pz_idx + 1 < CC_NUM_TUTORIAL ? "WELL DONE! A=NXT" : "ALL DONE! A=MENU")
+                               : (pz_idx + 1 < CC_NUM_PUZZLES ? "SOLVED!  A=NEXT " : "ALL SOLVED! A=OK"));
+    } else if (s->state == ST_FAILED) {
+        put(s->col0, STATUS_SROW, PAL_BAD, "TRY AGAIN!  A   ");
     } else if (s->state == ST_RESULT) {
         put(s->col0, STATUS_SROW, s->win ? PAL_GOOD : PAL_BAD,
             s->win ? "WIN!   START=AGN" : "LOSE   START=AGN");
@@ -582,16 +703,32 @@ static DWORD fresh_seed(void)
     return seed_mix & 0x3FFFFFFFUL;
 }
 
-static void start_side(Side *s, DWORD seed)
+static void side_begin(Side *s)
 {
-    cc_board_start(&s->b, seed, fresh_seed());
     s->state = ST_IDLE;
     s->held = 0; s->has_t = 0;
     s->cr = 3; s->cc = 3;
     s->idle_t = 0; s->stone_t = 0; s->msg_t = 0; s->lock_t = 0; s->buf_a = 0;
     s->win = 0;
+    s->rank = 0xff;
     clear_board_area(s);
     objs_reset(s);
+}
+
+static void start_side(Side *s, DWORD seed)
+{
+    cc_board_start(&s->b, seed, fresh_seed());
+    side_begin(s);
+}
+
+/* the current puzzle or lesson from the start (also used to try again) */
+static void start_side_pz(Side *s)
+{
+    cc_puzzle_load(&s->b, cur_puzzle());
+    s->pz_left = cur_puzzle()->moves;
+    s->got_lever = 0; s->max_chain = 0;
+    side_begin(s);
+    put(s->col0, HUD_SCORE, PAL_TEXT, "                ");
 }
 
 static void reset_side(Side *s, BYTE i)
@@ -610,18 +747,50 @@ static void rematch(void)
     start_side(&side[1], seed);
 }
 
+/* puzzles open one at a time: every solved one in a row, plus the next */
+static BYTE pz_open(void)
+{
+    BYTE k = 0;
+    while (k < CC_NUM_PUZZLES - 1 && ((pz_solved >> k) & 1)) k++;
+    return k;
+}
+
 static void draw_title(void)
 {
-    put(12, 12, menu_sel == 0 ? PAL_P1 : PAL_DIM, menu_sel == 0 ? "> SCORE ATTACK" : "  SCORE ATTACK");
-    put(12, 14, menu_sel == 1 ? PAL_P1 : PAL_DIM, menu_sel == 1 ? "> VERSUS      " : "  VERSUS      ");
-    put(8, 18, PAL_DIM, "A GRAB/DROP  B CANCEL");
-    put(8, 20, PAL_DIM, "C NEXT SCENE D MUSIC");
-    put(8, 22, PAL_DIM, "SELECT MENU");
+    static const char *ITEM[MENU_N] = { "SCORE ATTACK", "VERSUS      ", "PUZZLE  ", "HOW TO PLAY ", "HIGH SCORES " };
+    int k;
+    for (k = 0; k < MENU_N; k++) {
+        put(11, 11 + k * 2, menu_sel == k ? PAL_P1 : PAL_DIM, menu_sel == k ? ">" : " ");
+        put(13, 11 + k * 2, menu_sel == k ? PAL_P1 : PAL_DIM, ITEM[k]);
+    }
+    /* puzzle number: left / right picks among the open ones */
+    put(21, 15, PAL_DIM, pz_sel > 0 && menu_sel == MENU_PUZZLE ? "<" : " ");
+    put_2(22, 15, menu_sel == MENU_PUZZLE ? PAL_TEXT : PAL_DIM, pz_sel + 1);
+    put(24, 15, PAL_DIM, pz_sel < pz_open() && menu_sel == MENU_PUZZLE ? ">" : " ");
+    put(25, 15, PAL_GOOD, (pz_solved >> pz_sel) & 1 ? "*" : " ");
+    put(8, 23, PAL_DIM, "A GRAB/DROP  B CANCEL");
+    put(8, 25, PAL_DIM, "C NEXT SCENE D MUSIC");
+}
+
+static void draw_scores(void)
+{
+    int k;
+    put(14, 11, PAL_LEVER, "HIGH SCORES");
+    for (k = 0; k < HS_N; k++) {
+        put(11, 14 + k * 2, PAL_P1, ORDINAL[k]);
+        put(16, 14 + k * 2, PAL_TEXT, hs_name[k]);
+        put_num(21, 14 + k * 2, PAL_TEXT, hs_score[k], 7);
+    }
+    if (save_answer & 0x80) {
+        put(10, 25, PAL_BAD, "NOT SAVED: ERROR");
+        put_num(27, 25, PAL_BAD, (DWORD)(save_answer - 0x80), 2);
+    }
 }
 
 static void to_title(void)
 {
     in_title = 1;
+    show_scores = 0;
     reset_side(&side[0], 0);
     reset_side(&side[1], 1);
     clearFixLayer();
@@ -641,6 +810,10 @@ static void start_game(BYTE m, BYTE p)
     reset_side(&side[0], 0);
     reset_side(&side[1], 1);
     if (m == MODE_VS) rematch();
+    else if (m >= MODE_PUZZLE) {
+        side[1 - p].state = ST_OFF;
+        start_side_pz(&side[p]);
+    }
     else start_side(&side[p], fresh_seed());
 }
 
@@ -651,9 +824,73 @@ static void end_side(Side *s)
     if (mode == MODE_VS) {
         s->state = ST_RESULT; s->win = 0; s->lock_t = F_LOCK;
         o->state = ST_RESULT; o->win = 1; o->lock_t = F_LOCK; o->held = 0;
+    } else if (hs_rank((DWORD)s->b.score) >= 0) {
+        s->state = ST_NAME; s->lock_t = F_LOCK;
+        s->name[0] = s->name[1] = s->name[2] = 'A'; s->name[3] = 0;
+        s->name_pos = 0;
+        clear_board_area(s);
     } else {
         s->state = ST_OVER; s->lock_t = F_LOCK;
     }
+}
+
+/* the initials are in: take the place in the table and save it */
+static void name_done(Side *s)
+{
+    int r = hs_rank((DWORD)s->b.score);
+    s->state = ST_OVER; s->lock_t = F_LOCK;
+    if (r < 0) return;                    /* the other player got there first */
+    hs_insert(r, s->name, (DWORD)s->b.score);
+    s->rank = (BYTE)r;
+    save_due = 1;
+    say(s, "HIGH SCORE", PAL_GOOD);
+    s->msg[10] = ' ';
+    str_copy(s->msg + 11, ORDINAL[r], 4);
+    s->msg_t = 600;
+    snd_play(SND_LEVER, SND_CENTRE);
+}
+
+/* after a puzzle or lesson move has settled: solved, failed or carry on */
+static void puzzle_after_move(Side *s)
+{
+    const cc_puzzle *pz = cur_puzzle();
+    int ok;
+    switch (pz->goal) {
+    case PZ_MATCH: ok = 1; break;
+    case PZ_LEVER: ok = s->got_lever; break;
+    case PZ_CHAIN: ok = s->max_chain >= 2; break;
+    default:       ok = cc_count_stones(&s->b) == 0;
+    }
+    s->got_lever = 0; s->max_chain = 0;
+    if (ok) {
+        s->state = ST_SOLVED; s->lock_t = F_LOCK;
+        say(s, mode == MODE_TUTOR ? "NICE!" : "SOLVED!", PAL_GOOD);
+        sfx(s, SND_MOVES);
+        if (mode == MODE_PUZZLE && !((pz_solved >> pz_idx) & 1)) {
+            pz_solved = (WORD)(pz_solved | (1 << pz_idx));
+            save_due = 1;
+        }
+        return;
+    }
+    if (s->pz_left == 0 || !cc_has_valid_move(&s->b.g)) {
+        s->state = ST_FAILED; s->lock_t = F_LOCK;
+        if (pz->goal == PZ_LEVER) say(s, "NOT A LEVER", PAL_BAD);
+        else if (pz->goal == PZ_CHAIN) say(s, "NO CHAIN YET", PAL_BAD);
+        else if (s->pz_left == 0) say(s, "OUT OF MOVES", PAL_BAD);
+        else say(s, "NO MOVES LEFT", PAL_BAD);
+        sfx(s, SND_NO_MATCH);
+        return;
+    }
+    s->state = ST_IDLE;
+}
+
+static void next_puzzle(Side *s)
+{
+    int n = mode == MODE_TUTOR ? CC_NUM_TUTORIAL : CC_NUM_PUZZLES;
+    if (pz_idx + 1 >= n) { to_title(); return; }
+    pz_idx++;
+    if (mode == MODE_PUZZLE) pz_sel = pz_idx;
+    start_side_pz(s);
 }
 
 static void note_best(Side *s)
@@ -670,10 +907,17 @@ static void resolve_tick(Side *s)
     case ST_PRE:
         if (s->moving) return;            /* let the slide finish first */
         if (cc_resolve_step(&s->b, &s->step)) {
+            if (s->step.lever) s->got_lever = 1;
+            if (s->step.chain > s->max_chain) s->max_chain = s->step.chain;
             say_points(s, s->step.points, s->step.chain);
             sfx(s, (BYTE)(SND_CLEAR_1 + (s->step.chain > 9 ? 8 : s->step.chain - 1)));
             if (s->step.lever) { say(s, "LEVER!", PAL_LEVER); sfx(s, SND_LEVER); }
             s->state = ST_POP; s->timer = F_POP;
+            return;
+        }
+        if (IS_PUZZLE) {
+            cc_resolve_end(&s->b, (cc_board *)0);
+            puzzle_after_move(s);
             return;
         }
         before = s->b.pending;
@@ -767,6 +1011,7 @@ static void drop(Side *s)
         fr = s->axis == CC_AXIS_H ? s->hr : s->t;
         fc = s->axis == CC_AXIS_H ? s->t : s->hc;
         cc_commit(&s->b, s->hr, s->hc, s->axis, s->t);
+        if (IS_PUZZLE && s->pz_left) s->pz_left--;
         cc_apply_move(&s->oid, s->hr, s->hc, s->axis, s->t);   /* tiles stay where they are */
         s->cr = (BYTE)fr; s->cc = (BYTE)fc;
         s->held = 0; s->has_t = 0;
@@ -795,7 +1040,32 @@ static void side_input(Side *s, BYTE edge, BYTE rep, BYTE start)
     case ST_RESULT:
         if (!s->lock_t && (start || (edge & JOY_A))) { rematch(); snd_play(SND_MENU, SND_CENTRE); }
         return;
+    case ST_OFF:
+        return;
+    case ST_SOLVED:
+        if (!s->lock_t && (start || (edge & JOY_A))) { next_puzzle(s); snd_play(SND_MENU, SND_CENTRE); }
+        return;
+    case ST_FAILED:
+        if (!s->lock_t && (start || (edge & JOY_A))) { start_side_pz(s); snd_play(SND_MENU, SND_CENTRE); }
+        return;
+    case ST_NAME:
+        if (s->lock_t) return;
+        if (rep & (JOY_UP | JOY_DOWN)) {
+            int k = 0;
+            while (k < NAME_NCH - 1 && NAME_CHARS[k] != s->name[s->name_pos]) k++;
+            k = (rep & JOY_UP) ? (k + 1) % NAME_NCH : (k + NAME_NCH - 1) % NAME_NCH;
+            s->name[s->name_pos] = NAME_CHARS[k];
+            sfx(s, SND_TICK);
+        }
+        if ((edge & (JOY_A | JOY_RIGHT)) || start) {
+            sfx(s, SND_MENU);
+            if (++s->name_pos >= 3) name_done(s);
+        } else if ((edge & (JOY_B | JOY_LEFT)) && s->name_pos) {
+            s->name_pos--;
+        }
+        return;
     case ST_IDLE:
+        if (IS_PUZZLE && start) { start_side_pz(s); snd_play(SND_MENU, SND_CENTRE); return; }
         break;
     default:
         /* busy resolving: remember an A press and use it once the board is ready */
@@ -867,6 +1137,8 @@ int main(void)
         pictureInit(&panel[k], &cc_panel, (ushort)(SPR_PANEL + k * cc_panel.tileWidth), pal_panel,
                     (short)(BX0[k] - 8), (short)(BY0 - 8), FLIP_NONE);
 #endif
+    save_load();
+    best = hs_score[0];
     to_title();
     play_scene_song();
 
@@ -877,6 +1149,7 @@ int main(void)
         if ((frames & 15) == 0) resend_static_palettes();
         scene_tick(frames);
         snd_tick();
+        if (save_due) { save_due = 0; save_store(); }
 
         read_pad(&pad[0], volMEMBYTE(P1_CURRENT), &e1, &r1);
         read_pad(&pad[1], volMEMBYTE(P2_CURRENT), &e2, &r2);
@@ -895,13 +1168,28 @@ int main(void)
         put_num(32, 0, PAL_TEXT, best, 7);
 
         if (in_title) {
-            if ((e1 | e2) & (JOY_UP | JOY_DOWN)) { menu_sel = (BYTE)!menu_sel; snd_play(SND_MENU, SND_CENTRE); }
-            if ((e1 & JOY_A) || (ps & P1_START)) {
-                start_game(menu_sel ? MODE_VS : MODE_SCORE, 0);
+            BYTE go = (BYTE)(((e1 & JOY_A) || (ps & P1_START)) ? 1 : ((e2 & JOY_A) || (ps & P2_START)) ? 2 : 0);
+            BYTE r = (BYTE)(r1 | r2);
+            if (show_scores) {
+                if (go || (edges & JOY_B)) { show_scores = 0; clearFixLayer(); snd_play(SND_MENU, SND_CENTRE); }
+                else draw_scores();
+                continue;
+            }
+            if (r & (JOY_UP | JOY_DOWN)) {
+                menu_sel = (BYTE)((menu_sel + ((r & JOY_UP) ? MENU_N - 1 : 1)) % MENU_N);
                 snd_play(SND_MENU, SND_CENTRE);
-            } else if ((e2 & JOY_A) || (ps & P2_START)) {
-                start_game(menu_sel ? MODE_VS : MODE_SCORE, 1);
+            }
+            if (menu_sel == MENU_PUZZLE && (r & JOY_LEFT) && pz_sel > 0) { pz_sel--; snd_play(SND_TICK, SND_CENTRE); }
+            if (menu_sel == MENU_PUZZLE && (r & JOY_RIGHT) && pz_sel < pz_open()) { pz_sel++; snd_play(SND_TICK, SND_CENTRE); }
+            if (go) {
                 snd_play(SND_MENU, SND_CENTRE);
+                switch (menu_sel) {
+                case MENU_SCORE:  start_game(MODE_SCORE, (BYTE)(go - 1)); break;
+                case MENU_VS:     start_game(MODE_VS, (BYTE)(go - 1)); break;
+                case MENU_PUZZLE: pz_idx = pz_sel; start_game(MODE_PUZZLE, (BYTE)(go - 1)); break;
+                case MENU_TUTOR:  pz_idx = 0; start_game(MODE_TUTOR, (BYTE)(go - 1)); break;
+                default:          show_scores = 1; clearFixLayer(); break;
+                }
             }
             else draw_title();
             continue;
