@@ -200,6 +200,23 @@ static void load_sprite_palettes(void)
     palJobPut(SPR_PAL_LOGO, cc_logo_Palettes.count, cc_logo_Palettes.data);
 }
 
+/*
+ * The fix and board palettes are uploaded once at boot, but on the first
+ * hardware test they came out wrong (the scenery, re-sent as it tints, was
+ * fine).  So they are re-sent every 16 frames: cheap (20 palettes) and safe
+ * whatever overwrote or dropped them.
+ */
+static void resend_static_palettes(void)
+{
+    int n = cc_tiles_Palettes.count;
+    if (n > 16) n = 16;
+    palJobPut(PAL_FIRST, NUM_FIXPAL, fixpal);
+    palJobPut(pal_tiles, n, cc_tiles_Palettes.data);
+    palJobPut(pal_hi, n, hipal);
+    palJobPut(pal_cursor, cc_cursor_Palettes.count, cc_cursor_Palettes.data);
+    palJobPut(SPR_PAL_LOGO, cc_logo_Palettes.count, cc_logo_Palettes.data);
+}
+
 static const char *SCENE_NAME[3] = { "LAKESIDE ", "SHORELINE", "RAIN     " };
 
 /* track 2 = lake, 3 = beach, 4 = rain window */
@@ -798,6 +815,53 @@ static void side_input(Side *s, BYTE edge, BYTE rep, BYTE start)
     if ((edge & JOY_B) && s->held) { s->held = 0; s->has_t = 0; }
 }
 
+/* ---------- lag meter (testing) ---------- */
+
+/*
+ * "LAG n" on the top line: video frames the game missed in the last second
+ * because a pass of the main loop took too long (DATlib counts them).
+ * Blank when there were none.
+ */
+static void lag_meter(void)
+{
+    static DWORD last;
+    static WORD tick;
+    DWORD d;
+    if (++tick < 60) return;
+    tick = 0;
+    d = DAT_droppedFrames - last;
+    last = DAT_droppedFrames;
+    if (d > 99) d = 99;
+    if (d) { put(13, 0, PAL_BAD, "LAG"); put_num(17, 0, PAL_BAD, d, 2); }
+    else put(13, 0, PAL_BAD, "      ");
+}
+
+/* ---------- joypads ---------- */
+
+/*
+ * Presses are worked out from the buttons held now versus last pass, not
+ * read from the BIOS's edge bytes: those only last one video frame, so a
+ * press landing on a frame the game was too busy to look at was lost.
+ * Held directions repeat after 14 passes, then every 5.
+ */
+#define REP_FIRST 14
+#define REP_NEXT  5
+
+typedef struct { BYTE prev, hold; } Pad;
+static Pad pad[2];
+static BYTE ps_prev;
+
+static void read_pad(Pad *p, BYTE cur, BYTE *edge, BYTE *rep)
+{
+    BYTE dirs = (BYTE)(cur & (JOY_UP | JOY_DOWN | JOY_LEFT | JOY_RIGHT));
+    *edge = (BYTE)(cur & ~p->prev);
+    *rep = (BYTE)(*edge & dirs);
+    if (!dirs || (*edge & dirs)) p->hold = 0;
+    else if (++p->hold >= REP_FIRST && (p->hold - REP_FIRST) % REP_NEXT == 0) *rep = dirs;
+    if (p->hold > REP_FIRST + REP_NEXT * 40) p->hold = REP_FIRST;   /* keep it bounded */
+    p->prev = cur;
+}
+
 /* ---------- main ---------- */
 
 int main(void)
@@ -825,12 +889,15 @@ int main(void)
         SCClose();
         waitVBlank();
         frames++;
+        if ((frames & 15) == 0) resend_static_palettes();
         scene_tick(frames);
         snd_tick();
 
-        e1 = volMEMBYTE(P1_EDGE);  r1 = volMEMBYTE(P1_REPEAT);
-        e2 = volMEMBYTE(P2_EDGE);  r2 = volMEMBYTE(P2_REPEAT);
-        ps = volMEMBYTE(PS_EDGE);
+        read_pad(&pad[0], volMEMBYTE(P1_CURRENT), &e1, &r1);
+        read_pad(&pad[1], volMEMBYTE(P2_CURRENT), &e2, &r2);
+        k = volMEMBYTE(PS_CURRENT);
+        ps = (BYTE)(k & ~ps_prev);
+        ps_prev = k;
         edges = (BYTE)(e1 | e2);
         seed_mix += e1 + (e2 << 8) + ps;
 
@@ -839,6 +906,7 @@ int main(void)
         if (frames % SCENE_FRAMES == 0) play_scene_song();
 
         put(1, 0, PAL_DIM, SCENE_NAME[scene_shown()]);
+        lag_meter();
         put(27, 0, PAL_DIM, "BEST");
         put_num(32, 0, PAL_TEXT, best, 7);
 

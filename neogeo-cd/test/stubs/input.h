@@ -1,9 +1,8 @@
 extern unsigned char stub_in[8];
-#define P1_EDGE   ((unsigned long)&stub_in[0])
-#define P1_REPEAT ((unsigned long)&stub_in[1])
-#define P2_EDGE   ((unsigned long)&stub_in[2])
-#define P2_REPEAT ((unsigned long)&stub_in[3])
-#define PS_EDGE   ((unsigned long)&stub_in[4])
+/* buttons held this frame (the game works out presses and repeats itself) */
+#define P1_CURRENT ((unsigned long)&stub_in[0])
+#define P2_CURRENT ((unsigned long)&stub_in[2])
+#define PS_CURRENT ((unsigned long)&stub_in[4])
 #define JOY_UP 0x01
 #define JOY_DOWN 0x02
 #define JOY_LEFT 0x04

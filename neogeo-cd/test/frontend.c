@@ -47,6 +47,7 @@ static void stub_cdda(int op, BYTE track);
 #include "sound.c"
 
 unsigned char stub_in[8];
+unsigned int DAT_droppedFrames;
 ushort LSPCmode;
 
 /* ---- fake art: tile word = picture id << 10 | tile index in the picture ----
