@@ -78,6 +78,7 @@ static const short BX0[2] = { 24, 168 };   /* board left, pixels */
 #define F_LOCK     54
 #define F_MSG      70
 #define F_FLASH    10
+#define F_BUFFER   20             /* an A press while the board is busy is kept this long */
 #define FALL_MAX   9            /* fall speed cap, pixels per frame */
 
 enum { ST_JOIN, ST_IDLE, ST_PRE, ST_POP, ST_FALL, ST_SHUFFLE, ST_OVER, ST_RESULT };
@@ -107,6 +108,7 @@ typedef struct {
     Obj   o[NCELL];
     short cux, cuy;               /* cursor sprite position */
     BYTE  moving;                 /* something was still gliding last frame */
+    BYTE  buf_a;                  /* passes left on an A press made while busy */
 } Side;
 
 static Side   side[2];
@@ -586,7 +588,7 @@ static void start_side(Side *s, DWORD seed)
     s->state = ST_IDLE;
     s->held = 0; s->has_t = 0;
     s->cr = 3; s->cc = 3;
-    s->idle_t = 0; s->stone_t = 0; s->msg_t = 0; s->lock_t = 0;
+    s->idle_t = 0; s->stone_t = 0; s->msg_t = 0; s->lock_t = 0; s->buf_a = 0;
     s->win = 0;
     clear_board_area(s);
     objs_reset(s);
@@ -796,8 +798,12 @@ static void side_input(Side *s, BYTE edge, BYTE rep, BYTE start)
     case ST_IDLE:
         break;
     default:
-        return;   /* busy resolving */
+        /* busy resolving: remember an A press and use it once the board is ready */
+        if (edge & JOY_A) s->buf_a = F_BUFFER;
+        else if (s->buf_a) s->buf_a--;
+        return;
     }
+    if (s->buf_a) { s->buf_a = 0; if (!s->held) edge |= JOY_A; }
     if (rep & JOY_UP) dr = -1; else if (rep & JOY_DOWN) dr = 1;
     else if (rep & JOY_LEFT) dc = -1; else if (rep & JOY_RIGHT) dc = 1;
     if (dr || dc) {
