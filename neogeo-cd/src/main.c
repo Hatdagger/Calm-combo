@@ -1,9 +1,13 @@
 /*
  * Calm Combo - Neo Geo CD
  *
- * Milestone 1: the whole game, drawn on the fix (text) layer.
- * Each 16x16 tile is a 2x2 block of font characters in its own colour, so
- * the game is playable before the sprite artwork exists.
+ * Milestone 2: the board is drawn with sprites.
+ *   - Every tile is its own 16x16 sprite, so it can glide when a line is
+ *     slid, fall with gravity and play its pop frames from tiles.png.
+ *   - The cursor (cursor.png) and a soft panel behind each board (panel.png)
+ *     are sprites too.
+ *   - The HUD stays on the fix (text) layer, now in the custom font.png,
+ *     recoloured per message by swapping its three colours.
  *
  * Strict C89: gcc 2.95, no // comments, declarations at the top of blocks.
  */
@@ -20,16 +24,27 @@
 /* Set to 1 once the three scene songs are on the disc as tracks 2-4. */
 #define HAVE_CDDA 0
 
-/* ---------- screen layout (fix map: 40 columns, visible rows 2..29) ---------- */
+/* Set to 0 to drop the soft plate behind each board (saves 18 sprites per line). */
+#define USE_PANEL 1
+
+/* ---------- screen layout ---------- */
+/* fix map: 40 columns, visible rows 2..29, so text row n is at pixel y n*8 */
 #define ROW(n)       ((n) + 2)
 #define BOARD_SROW   9          /* pixel y 72, like the web prototype */
-#define HUD_SROW     4
+#define HUD_SCORE    3          /* HUD rows are spaced out: the font fills */
+#define HUD_MOVES    5          /* its whole 8x8 cell, so adjacent rows touch */
+#define HUD_STONES   7
 #define MSG_SROW     24
 #define STATUS_SROW  26
 
+#define TILE   16
+#define BY0    72               /* board top, pixels */
+#define NCELL  (CC_ROWS * CC_COLS)
+static const short BX0[2] = { 24, 168 };   /* board left, pixels */
+
 /* fix palettes (NeoCore reserves 0 and 1 for the system) */
 #define PAL_FIRST  2
-#define PAL_TILE0  2            /* 2..7 tile colours */
+#define PAL_TILE0  2            /* 2..7 tile colours (used for text accents) */
 #define PAL_STONE  8
 #define PAL_TEXT   9
 #define PAL_DIM    10
@@ -38,24 +53,43 @@
 #define PAL_GOOD   13
 #define PAL_BAD    14
 #define PAL_LEVER  15
-#define PAL_HOT    PAL_TEXT
 #define NUM_FIXPAL 14
+#define FONT_BANK  3            /* font.png lives in fix bank 3 */
 
+/* sprite palettes: 16 = logo, then the board art from 32 upwards */
 #define SPR_PAL_LOGO 16
+#define SPR_PAL_BASE 32
+
+/* sprite numbers: higher numbers are drawn on top */
 #define SPR_LOGO     1
+#define SPR_PANEL    200        /* 2 x 9 sprites */
+#define SPR_TILE     220        /* 2 x 56 sprites, one per tile */
+#define SPR_HELD     332        /* 2: the lifted tile, above its neighbours */
+#define SPR_CURSOR   334        /* 2 */
+#define SPR_END      336
+#define SPR_N        (SPR_END - SPR_TILE)
 
 /* timings in frames (60 fps) */
 #define F_PRE      7
 #define F_POP      16
-#define F_FALL     18
 #define F_SHUFFLE  27
 #define F_LOCK     54
 #define F_MSG      70
+#define F_FLASH    10
+#define FALL_MAX   9            /* fall speed cap, pixels per frame */
 #define SCENE_FRAMES (300L * 60L)
 #define DAY_FRAMES   (600L * 60L)
 
 enum { ST_JOIN, ST_IDLE, ST_PRE, ST_POP, ST_FALL, ST_SHUFFLE, ST_OVER, ST_RESULT };
 enum { MODE_SCORE, MODE_VS };
+
+/* one on-screen tile; the board maps each cell to one of these */
+typedef struct {
+    short x, y;                   /* pixel position, glides to its cell */
+    BYTE  vy;                     /* fall speed */
+    BYTE  col;                    /* colour shown (0..5, 6 = stone) */
+    BYTE  flash;                  /* frames left of a bright flash */
+} Obj;
 
 typedef struct {
     cc_board b;
@@ -69,21 +103,44 @@ typedef struct {
     WORD  msg_t;
     BYTE  msg_pal;
     BYTE  win;                    /* versus result */
+    cc_grid oid;                  /* which Obj sits in each cell */
+    Obj   o[NCELL];
+    short cux, cuy;               /* cursor sprite position */
+    BYTE  moving;                 /* something was still gliding last frame */
 } Side;
 
 static Side   side[2];
 static BYTE   mode = MODE_SCORE, in_title = 1, menu_sel = 0, music_on = 1;
 static DWORD  best = 0, frames = 0, seed_mix = 0x1234567UL;
 static picture logo;
+#if USE_PANEL
+static picture panel[2];
+#endif
 
 /* ---------- colours ---------- */
 
-/* 8-bit RGB -> Neo Geo colour word (5 bits per channel + dark bit 0) */
-static WORD ng_rgb(WORD r, WORD g, WORD b)
+/* 5-bit channels -> Neo Geo colour word (dark bit 0) */
+static WORD ng5(WORD r, WORD g, WORD b)
 {
-    r >>= 3; g >>= 3; b >>= 3;
     return (WORD)(((r & 1) << 14) | ((g & 1) << 13) | ((b & 1) << 12) |
                   ((r >> 1) << 8) | ((g >> 1) << 4) | (b >> 1));
+}
+
+/* 8-bit RGB -> Neo Geo colour word */
+static WORD ng_rgb(WORD r, WORD g, WORD b) { return ng5((WORD)(r >> 3), (WORD)(g >> 3), (WORD)(b >> 3)); }
+
+static WORD ch_r(WORD w) { return (WORD)(((w >> 7) & 0x1e) | ((w >> 14) & 1)); }
+static WORD ch_g(WORD w) { return (WORD)(((w >> 3) & 0x1e) | ((w >> 13) & 1)); }
+static WORD ch_b(WORD w) { return (WORD)(((w << 1) & 0x1e) | ((w >> 12) & 1)); }
+
+/* a colour pushed 3/8 of the way to white, for highlights */
+static WORD brighten(WORD w)
+{
+    WORD r = ch_r(w), g = ch_g(w), b = ch_b(w);
+    r = (WORD)(r + ((31 - r) * 3) / 8);
+    g = (WORD)(g + ((31 - g) * 3) / 8);
+    b = (WORD)(b + ((31 - b) * 3) / 8);
+    return ng5(r, g, b);
 }
 
 static const BYTE FIXCOL[NUM_FIXPAL][3] = {
@@ -96,16 +153,51 @@ static const BYTE FIXCOL[NUM_FIXPAL][3] = {
 };
 static WORD fixpal[NUM_FIXPAL * 16];
 
-static void load_palettes(void)
+/*
+ * The font is drawn in three greys (main #F8F8F8, shade #A8A8A8, outline
+ * #282828).  Whatever palette slots the converter gave them, sort each slot
+ * by brightness and swap in the tint: main = tint, shade = 2/3 tint,
+ * outline = a dark tint.
+ */
+static void load_fix_palettes(void)
 {
     int p, k;
-    WORD c;
+    WORD w, sum, r, g, b;
     for (p = 0; p < NUM_FIXPAL; p++) {
-        c = ng_rgb(FIXCOL[p][0], FIXCOL[p][1], FIXCOL[p][2]);
+        r = (WORD)(FIXCOL[p][0] >> 3); g = (WORD)(FIXCOL[p][1] >> 3); b = (WORD)(FIXCOL[p][2] >> 3);
         fixpal[p * 16] = 0;
-        for (k = 1; k < 16; k++) fixpal[p * 16 + k] = c;
+        for (k = 1; k < 16; k++) {
+            w = cc_font_Palettes.data[k];
+            sum = (WORD)(ch_r(w) + ch_g(w) + ch_b(w));     /* 0..93 */
+            if (sum > 78)      fixpal[p * 16 + k] = ng5(r, g, b);
+            else if (sum > 39) fixpal[p * 16 + k] = ng5((WORD)(r * 2 / 3), (WORD)(g * 2 / 3), (WORD)(b * 2 / 3));
+            else               fixpal[p * 16 + k] = ng5((WORD)(r / 5), (WORD)(g / 5), (WORD)(b / 5));
+        }
     }
     palJobPut(PAL_FIRST, NUM_FIXPAL, fixpal);
+}
+
+/* board art palettes: tiles, bright tiles, cursor, panel */
+static WORD pal_tiles, pal_hi, pal_cursor, pal_panel;
+static WORD hipal[16 * 16];
+
+static void load_sprite_palettes(void)
+{
+    int k, n = cc_tiles_Palettes.count;
+    if (n > 16) n = 16;
+    pal_tiles  = SPR_PAL_BASE;
+    pal_hi     = (WORD)(pal_tiles + n);
+    pal_cursor = (WORD)(pal_hi + n);
+    pal_panel  = (WORD)(pal_cursor + cc_cursor_Palettes.count);
+    for (k = 0; k < n * 16; k++)
+        hipal[k] = (k & 15) ? brighten(cc_tiles_Palettes.data[k]) : cc_tiles_Palettes.data[k];
+    palJobPut(pal_tiles, n, cc_tiles_Palettes.data);
+    palJobPut(pal_hi, n, hipal);
+    palJobPut(pal_cursor, cc_cursor_Palettes.count, cc_cursor_Palettes.data);
+#if USE_PANEL
+    palJobPut(pal_panel, cc_panel_Palettes.count, cc_panel_Palettes.data);
+#endif
+    palJobPut(SPR_PAL_LOGO, cc_logo_Palettes.count, cc_logo_Palettes.data);
 }
 
 /* scene backdrop: day colour drifting to night and back over 10 minutes */
@@ -152,11 +244,65 @@ static void toggle_music(void)
 #endif
 }
 
+/* ---------- sprites ---------- */
+
+/*
+ * Single-tile sprites written straight into the sprite control blocks with
+ * DATlib's SC234 list (sent during vblank).  The last value written to each
+ * sprite is cached, so only changes go out each frame.
+ */
+static WORD c_x[SPR_N], c_y[SPR_N], c_t[SPR_N], c_a[SPR_N];
+
+static void spr_init(void)
+{
+    int k;
+    for (k = 0; k < SPR_N; k++) {
+        c_x[k] = c_t[k] = c_a[k] = 0xffff;
+        c_y[k] = 0;
+        SC234Put(VRAM_SHRINK_ADDR(SPR_TILE + k), 0xfff);
+        SC234Put(VRAM_POSY_ADDR(SPR_TILE + k), VRAM_POSY(224, SPR_UNLINK, 0));
+    }
+}
+
+static void spr_hide(WORD s)
+{
+    int k = s - SPR_TILE;
+    if (c_y[k]) {
+        SC234Put(VRAM_POSY_ADDR(s), VRAM_POSY(224, SPR_UNLINK, 0));
+        c_y[k] = 0;
+    }
+}
+
+/* show sprite s at (x, y) with one tile of a picture (frame column fc, row fr) */
+static void spr_show(WORD s, short x, short y, const pictureInfo *pi, int fc, int fr, WORD pal)
+{
+    int k = s - SPR_TILE;
+    const ushort *m = pi->maps[0] + (fc * pi->tileHeight + fr) * 2;
+    WORD v;
+    v = (WORD)VRAM_POSY(y, SPR_UNLINK, 1);
+    if (c_y[k] != v) { SC234Put(VRAM_POSY_ADDR(s), v); c_y[k] = v; }
+    v = (WORD)VRAM_POSX(x & 0x1ff);
+    if (c_x[k] != v) { SC234Put(VRAM_POSX_ADDR(s), v); c_x[k] = v; }
+    v = m[0];
+    if (c_t[k] != v) { SC234Put(VRAM_SPR_ADDR(s), v); c_t[k] = v; }
+    v = (WORD)(m[1] + (pal << 8));
+    if (c_a[k] != v) { SC234Put(VRAM_SPR_ADDR(s) + 1, v); c_a[k] = v; }
+}
+
+/* glide halfway there each frame (always at least 1 pixel) */
+static short ease(short v, short t)
+{
+    short d = (short)(t - v);
+    if (d > 0) return (short)(v + (d + 1) / 2);
+    if (d < 0) return (short)(v - (1 - d) / 2);
+    return v;
+}
+
 /* ---------- text helpers ---------- */
 
 static void put(int x, int srow, int pal, const char *s)
 {
-    fixPrint((ushort)x, (ushort)ROW(srow), (ushort)pal, 0, s);
+    fixPrint((ushort)x, (ushort)ROW(srow), (ushort)pal, FONT_BANK, s);
 }
 
 /* right-aligned, zero-padded unsigned number */
@@ -198,81 +344,188 @@ static void say_points(Side *s, WORD pts, BYTE chain)
     say(s, buf, PAL_P1 + s->i);
 }
 
-/* ---------- tiles ---------- */
+/* ---------- board sprites ---------- */
 
-/* each colour is two rows of two characters; colour + shape, like the web build */
-static const char *GLYPH[7][2] = {
-    { "()", "()" },     /* circle   */
-    { "/\\", "\\/" },   /* diamond  */
-    { "[]", "[]" },     /* square   */
-    { "/\\", "--" },    /* triangle */
-    { "**", "**" },     /* star     */
-    { "<>", "<>" },     /* hexagon  */
-    { "##", "##" }      /* stone    */
-};
-
-static void draw_tile(Side *s, int r, int c, int color, int pal)
+static void clear_board_area(Side *s)
 {
-    int x = s->col0 + c * 2, y = BOARD_SROW + r * 2;
-    if (color < 0) { put(x, y, PAL_TEXT, "  "); put(x, y + 1, PAL_TEXT, "  "); return; }
-    put(x, y, pal, GLYPH[color][0]);
-    put(x, y + 1, pal, GLYPH[color][1]);
+    int r;
+    for (r = 0; r < CC_ROWS * 2; r++) put(s->col0, BOARD_SROW + r, PAL_TEXT, "                ");
 }
 
-static int tile_pal(int color) { return color == CC_STONE ? PAL_STONE : PAL_TILE0 + color; }
-
-static void draw_board(Side *s)
+/* fresh tiles: one Obj per cell, dropping in from above the board */
+static void objs_reset(Side *s)
 {
-    cc_grid w;
-    int r, c, color, pal, blink = (int)((frames >> 3) & 1), hr = -1, hc = -1;
-    BYTE pcol = (BYTE)(PAL_P1 + s->i);
+    int r, c, k;
+    Obj *o;
+    for (r = 0; r < CC_ROWS; r++)
+        for (c = 0; c < CC_COLS; c++) {
+            k = r * CC_COLS + c;
+            s->oid.c[r][c] = (cc_u8)k;
+            o = &s->o[k];
+            o->x = (short)(BX0[s->i] + c * TILE);
+            o->y = (short)(BY0 + r * TILE - (CC_ROWS + 1) * TILE - (CC_COLS - 1 - c) * 6);
+            o->vy = 0;
+            o->col = s->b.g.c[r][c];
+            o->flash = 0;
+        }
+    s->cux = (short)(BX0[s->i] + s->cc * TILE);
+    s->cuy = (short)(BY0 + s->cr * TILE);
+}
 
-    w = s->b.g;
+/*
+ * Before cc_gravity(): survivors in each column keep their Obj and slide
+ * down; the cleared Objs are reused for the new tiles, stacked above the top.
+ */
+static void objs_fall(Side *s)
+{
+    int r, c, n, f, w, k;
+    cc_u8 keep[CC_ROWS], freed[CC_ROWS];
+    Obj *o;
+    for (c = 0; c < CC_COLS; c++) {
+        n = f = 0;
+        for (r = CC_ROWS - 1; r >= 0; r--) {
+            if (s->step.dying[r][c]) freed[f++] = s->oid.c[r][c];
+            else keep[n++] = s->oid.c[r][c];
+        }
+        w = CC_ROWS - 1;
+        for (k = 0; k < n; k++) s->oid.c[w--][c] = keep[k];
+        for (k = 0; k < f; k++) {
+            s->oid.c[k][c] = freed[k];
+            o = &s->o[freed[k]];
+            o->x = (short)(BX0[s->i] + c * TILE);
+            o->y = (short)(BY0 + (k - f) * TILE);
+            o->vy = 0;
+            o->flash = 0;
+        }
+    }
+}
+
+/* after cc_gravity(): new tiles take their colours without a flash */
+static void objs_sync(Side *s)
+{
+    int r, c;
+    for (r = 0; r < CC_ROWS; r++)
+        for (c = 0; c < CC_COLS; c++)
+            s->o[s->oid.c[r][c]].col = s->b.g.c[r][c];
+}
+
+static void hide_side(Side *s)
+{
+    int k;
+    for (k = 0; k < NCELL; k++) spr_hide((WORD)(SPR_TILE + s->i * NCELL + k));
+    spr_hide((WORD)(SPR_HELD + s->i));
+    spr_hide((WORD)(SPR_CURSOR + s->i));
+}
+
+/* move every tile one frame towards its cell and send the sprites */
+static void render_side(Side *s)
+{
+    cc_grid ids, cols;
+    int r, c, hr = -1, hc = -1, popf = -1, blink, fr, e, moving = 0, held_obj = -1;
+    short tx, ty, x0 = BX0[s->i];
+    WORD pal, spr;
+    Obj *o;
+
+    if (in_title || s->state == ST_JOIN) { hide_side(s); s->moving = 0; return; }
+
+    ids = s->oid;
+    cols = s->b.g;
     if (s->held) {
         hr = s->hr; hc = s->hc;
         if (s->has_t) {
-            cc_apply_move(&w, s->hr, s->hc, s->axis, s->t);
+            cc_apply_move(&ids, s->hr, s->hc, s->axis, s->t);
+            cc_apply_move(&cols, s->hr, s->hc, s->axis, s->t);
             if (s->axis == CC_AXIS_H) hc = s->t; else hr = s->t;
         }
     }
+    if (s->state == ST_POP) {
+        e = F_POP - s->timer;
+        popf = e < 4 ? 1 : e < 10 ? 2 : 3;
+    }
+    blink = (int)((frames >> 3) & 1);
+
     for (r = 0; r < CC_ROWS; r++)
         for (c = 0; c < CC_COLS; c++) {
-            color = w.c[r][c];
-            pal = tile_pal(color);
-            if (s->state == ST_POP && s->step.dying[r][c]) {
-                if (blink) { draw_tile(s, r, c, -1, 0); continue; }
-                pal = PAL_HOT;
-            } else if (s->held) {
-                if (r == hr && c == hc) pal = blink ? pcol : PAL_HOT;
-                else if (s->has_t && s->pv.count && s->pv.hit[r][c] && blink) pal = PAL_HOT;
-            } else if (s->state == ST_IDLE && r == s->cr && c == s->cc && ((frames >> 4) & 1)) {
-                pal = pcol;
+            o = &s->o[ids.c[r][c]];
+            spr = (WORD)(SPR_TILE + s->i * NCELL + ids.c[r][c]);
+            tx = (short)(x0 + c * TILE);
+            ty = (short)(BY0 + r * TILE);
+
+            /* a colour changed in place (stones landed, shuffle): flash it */
+            if (o->col != cols.c[r][c]) { o->col = cols.c[r][c]; o->flash = F_FLASH; }
+
+            if (o->x != tx) { o->x = ease(o->x, tx); moving = 1; }
+            if (o->y < ty && (s->state == ST_FALL || o->vy || ty - o->y > TILE)) {
+                if (o->vy < FALL_MAX) o->vy++;
+                o->y = (short)(o->y + o->vy);
+                if (o->y >= ty) { o->y = ty; o->vy = 0; }
+                moving = 1;
+            } else if (o->y != ty) {
+                o->y = ease(o->y, ty); o->vy = 0; moving = 1;
             }
-            draw_tile(s, r, c, color, pal);
+
+            if (o->y < BY0 - 8) { spr_hide(spr); continue; }   /* still above the board */
+
+            fr = 0;
+            pal = pal_tiles;
+            if (popf >= 0 && s->step.dying[r][c]) fr = popf;
+            else if (o->flash) { o->flash--; if (o->flash & 2) pal = pal_hi; }
+            else if (s->held && s->has_t && s->pv.count && s->pv.hit[r][c] && blink) pal = pal_hi;
+
+            if (r == hr && c == hc) {             /* the lifted tile, drawn on top */
+                held_obj = ids.c[r][c];
+                spr_hide(spr);
+                spr_show((WORD)(SPR_HELD + s->i), o->x, (short)(o->y - 2), &cc_tiles, 0, o->col, pal_hi);
+                continue;
+            }
+            spr_show(spr, o->x, o->y, &cc_tiles, fr, o->col, pal);
         }
+    if (held_obj < 0) spr_hide((WORD)(SPR_HELD + s->i));
+    s->moving = (BYTE)moving;
+
+    /* cursor: rides on the held tile, or glides between cells */
+    if (s->state == ST_IDLE) {
+        if (held_obj >= 0) {
+            s->cux = s->o[held_obj].x;
+            s->cuy = (short)(s->o[held_obj].y - 2);
+        } else {
+            s->cux = ease(s->cux, (short)(x0 + s->cc * TILE));
+            s->cuy = ease(s->cuy, (short)(BY0 + s->cr * TILE));
+        }
+        spr_show((WORD)(SPR_CURSOR + s->i), s->cux, s->cuy, &cc_cursor,
+                 (int)((frames >> 3) & 3), s->i, pal_cursor);
+    } else {
+        spr_hide((WORD)(SPR_CURSOR + s->i));
+    }
 }
 
-static void clear_board_area(Side *s, int pal_unused)
+static void show_panels(BYTE on)
 {
-    int r;
-    (void)pal_unused;
-    for (r = 0; r < CC_ROWS * 2; r++) put(s->col0, BOARD_SROW + r, PAL_TEXT, "                ");
+#if USE_PANEL
+    if (on) { pictureShow(&panel[0]); pictureShow(&panel[1]); }
+    else    { pictureHide(&panel[0]); pictureHide(&panel[1]); }
+#else
+    (void)on;
+#endif
 }
+
+/* ---------- HUD ---------- */
 
 static void draw_hud(Side *s)
 {
     BYTE pcol = (BYTE)(PAL_P1 + s->i);
     int x = s->col0;
-    put(x, HUD_SROW, pcol, s->i ? "2P" : "1P");
+    put(x, HUD_SCORE, pcol, s->i ? "2P" : "1P");
     if (s->state == ST_JOIN) {
-        put(x + 3, HUD_SROW, PAL_DIM, "             ");
-        put(x, HUD_SROW + 2, PAL_DIM, "                ");
+        put(x + 3, HUD_SCORE, PAL_DIM, "             ");
+        put(x, HUD_MOVES, PAL_DIM, "                ");
+        put(x, HUD_STONES, PAL_DIM, "                ");
         return;
     }
-    put(x + 3, HUD_SROW, PAL_TEXT, "SCORE");
-    put_num(x + 9, HUD_SROW, PAL_TEXT, (DWORD)s->b.score, 7);
-    put(x, HUD_SROW + 2, PAL_TEXT, "MOVES");
-    put_num(x + 6, HUD_SROW + 2, s->b.moves <= 3 ? PAL_BAD : PAL_GOOD,
+    put(x + 3, HUD_SCORE, PAL_TEXT, "SCORE");
+    put_num(x + 9, HUD_SCORE, PAL_TEXT, (DWORD)s->b.score, 7);
+    put(x, HUD_MOVES, PAL_TEXT, "MOVES");
+    put_num(x + 6, HUD_MOVES, s->b.moves <= 3 ? PAL_BAD : PAL_GOOD,
             (DWORD)(s->b.moves < 0 ? 0 : s->b.moves), 2);
     if (mode == MODE_VS) {
         /* move timer: 7 pips that empty as time runs out */
@@ -280,12 +533,12 @@ static void draw_hud(Side *s)
         char bar[8];
         for (k = 0; k < 7; k++) bar[k] = (char)(k < pips ? '=' : ' ');
         bar[7] = 0;
-        put(x + 9, HUD_SROW + 2, pips <= 2 ? PAL_BAD : PAL_DIM, bar);
-        put(x, HUD_SROW + 3, PAL_STONE, "STONES");
-        put_num(x + 7, HUD_SROW + 3, s->b.pending ? PAL_BAD : PAL_DIM, (DWORD)s->b.pending, 2);
+        put(x + 9, HUD_MOVES, pips <= 2 ? PAL_BAD : PAL_DIM, bar);
+        put(x, HUD_STONES, PAL_STONE, "STONES");
+        put_num(x + 7, HUD_STONES, s->b.pending ? PAL_BAD : PAL_DIM, (DWORD)s->b.pending, 2);
     } else {
-        put(x, HUD_SROW + 3, PAL_TEXT, "         ");
-        put(x + 9, HUD_SROW + 2, PAL_TEXT, "       ");
+        put(x, HUD_STONES, PAL_TEXT, "         ");
+        put(x + 9, HUD_MOVES, PAL_TEXT, "       ");
     }
 }
 
@@ -293,20 +546,15 @@ static void draw_side(Side *s)
 {
     BYTE pcol = (BYTE)(PAL_P1 + s->i);
     draw_hud(s);
+    render_side(s);
     if (s->state == ST_JOIN) {
-        clear_board_area(s, 0);
-        if ((frames >> 5) & 1) put(s->col0 + 2, BOARD_SROW + 6, pcol, "PRESS START");
+        put(s->col0 + 2, BOARD_SROW + 6, pcol, ((frames >> 5) & 1) ? "PRESS START" : "           ");
         put(s->col0, MSG_SROW, PAL_TEXT, "                ");
         put(s->col0, STATUS_SROW, PAL_TEXT, "                ");
         return;
     }
-    draw_board(s);
-    if (s->msg_t) {
-        put(s->col0, MSG_SROW, PAL_TEXT, "                ");
-        put(s->col0, MSG_SROW, s->msg_pal, s->msg);
-    } else {
-        put(s->col0, MSG_SROW, PAL_TEXT, "                ");
-    }
+    put(s->col0, MSG_SROW, PAL_TEXT, "                ");
+    if (s->msg_t) put(s->col0, MSG_SROW, s->msg_pal, s->msg);
     if (s->state == ST_OVER) {
         put(s->col0, STATUS_SROW, PAL_BAD, "GAME OVER  START");
     } else if (s->state == ST_RESULT) {
@@ -333,6 +581,8 @@ static void start_side(Side *s, DWORD seed)
     s->cr = 3; s->cc = 3;
     s->idle_t = 0; s->stone_t = 0; s->msg_t = 0; s->lock_t = 0;
     s->win = 0;
+    clear_board_area(s);
+    objs_reset(s);
 }
 
 static void reset_side(Side *s, BYTE i)
@@ -355,9 +605,9 @@ static void draw_title(void)
 {
     put(12, 12, menu_sel == 0 ? PAL_P1 : PAL_DIM, menu_sel == 0 ? "> SCORE ATTACK" : "  SCORE ATTACK");
     put(12, 14, menu_sel == 1 ? PAL_P1 : PAL_DIM, menu_sel == 1 ? "> VERSUS      " : "  VERSUS      ");
-    put(8, 19, PAL_DIM, "A GRAB/DROP  B CANCEL");
+    put(8, 18, PAL_DIM, "A GRAB/DROP  B CANCEL");
     put(8, 20, PAL_DIM, "C NEXT SCENE D MUSIC");
-    put(8, 21, PAL_DIM, "SELECT MENU");
+    put(8, 22, PAL_DIM, "SELECT MENU");
 }
 
 static void to_title(void)
@@ -366,6 +616,9 @@ static void to_title(void)
     reset_side(&side[0], 0);
     reset_side(&side[1], 1);
     clearFixLayer();
+    show_panels(0);
+    hide_side(&side[0]);
+    hide_side(&side[1]);
     pictureShow(&logo);
 }
 
@@ -375,6 +628,7 @@ static void start_game(BYTE m, BYTE p)
     mode = m;
     pictureHide(&logo);
     clearFixLayer();
+    show_panels(1);
     reset_side(&side[0], 0);
     reset_side(&side[1], 1);
     if (m == MODE_VS) rematch();
@@ -405,6 +659,7 @@ static void resolve_tick(Side *s)
     if (s->timer) { s->timer--; return; }
     switch (s->state) {
     case ST_PRE:
+        if (s->moving) return;            /* let the slide finish first */
         if (cc_resolve_step(&s->b, &s->step)) {
             say_points(s, s->step.points, s->step.chain);
             if (s->step.lever) say(s, "LEVER!", PAL_LEVER);
@@ -425,10 +680,14 @@ static void resolve_tick(Side *s)
         s->state = ST_IDLE;
         return;
     case ST_POP:
+        objs_fall(s);
         cc_gravity(&s->b, &s->step);
-        s->state = ST_FALL; s->timer = F_FALL;
+        objs_sync(s);
+        s->state = ST_FALL; s->timer = 2;
+        s->moving = 1;
         return;
     case ST_FALL:
+        if (s->moving) return;            /* wait until every tile has landed */
         s->state = ST_PRE; s->timer = 0;
         return;
     case ST_SHUFFLE:
@@ -490,12 +749,13 @@ static void drop(Side *s)
         fr = s->axis == CC_AXIS_H ? s->hr : s->t;
         fc = s->axis == CC_AXIS_H ? s->t : s->hc;
         cc_commit(&s->b, s->hr, s->hc, s->axis, s->t);
+        cc_apply_move(&s->oid, s->hr, s->hc, s->axis, s->t);   /* tiles stay where they are */
         s->cr = (BYTE)fr; s->cc = (BYTE)fc;
         s->held = 0; s->has_t = 0;
         s->idle_t = 0;
         s->state = ST_PRE; s->timer = F_PRE;
     } else {
-        if (s->has_t) say(s, "NO MATCH", PAL_BAD);
+        if (s->has_t) say(s, "NO MATCH", PAL_BAD);   /* tiles glide back by themselves */
         s->held = 0; s->has_t = 0;
     }
 }
@@ -547,9 +807,15 @@ int main(void)
     initGfx();
     clearFixLayer();
     LSPCmode = 0x1c00;
-    load_palettes();
-    palJobPut(SPR_PAL_LOGO, cc_logo_Palettes.count, cc_logo_Palettes.data);
+    load_fix_palettes();
+    load_sprite_palettes();
+    spr_init();
     pictureInit(&logo, &cc_logo, SPR_LOGO, SPR_PAL_LOGO, 80, 40, FLIP_NONE);
+#if USE_PANEL
+    for (k = 0; k < 2; k++)
+        pictureInit(&panel[k], &cc_panel, (ushort)(SPR_PANEL + k * cc_panel.tileWidth), pal_panel,
+                    (short)(BX0[k] - 8), (short)(BY0 - 8), FLIP_NONE);
+#endif
     to_title();
     play_scene_song();
 

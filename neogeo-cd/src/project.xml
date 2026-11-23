@@ -22,6 +22,15 @@
         <pict id="cc_logo">
           <file>assets\gfx\logo.png</file>
         </pict>
+        <pict id="cc_tiles">
+          <file>assets\gfx\board\tiles.png</file>
+        </pict>
+        <pict id="cc_cursor">
+          <file>assets\gfx\board\cursor.png</file>
+        </pict>
+        <pict id="cc_panel">
+          <file>assets\gfx\board\panel.png</file>
+        </pict>
       </chardata>
       <fixdata>
         <chardata>
@@ -35,6 +44,9 @@
             <file>{{build}}\fix\systemFont.bin</file>
           </import>
           <!-- The next free bank is bank 3 -->
+          <fix bank="3" id="cc_font">
+            <file>assets\gfx\font\font.png</file>
+          </fix>
         </chardata>
       </fixdata>
     </DAT>

@@ -1,0 +1,47 @@
+# A short play-through used for screenshots and as a smoke test.
+wait 20
+dump 01_title
+p1 START
+wait 14
+dump 02_drop_in
+idle 1
+dump 03_board
+p1 R
+p1 D
+wait 3
+dump 04_cursor
+auto 1 05_held
+wait 5
+dump 06_pop
+wait 12
+dump 07_fall
+idle 1
+dump 08_settled
+auto 1
+idle 1
+auto 1
+idle 1
+p2 START
+idle 2
+dump 09_two_players
+auto 2 10_p2_held
+wait 6
+dump 11_p2_pop
+idle 2
+p1 SELECT
+wait 4
+p1 D
+p1 A
+wait 16
+idle 1
+dump 12_versus
+auto 1
+idle 1
+auto 2
+idle 2
+auto 1
+idle 1
+auto 2
+idle 2
+dump 13_versus_later
+end

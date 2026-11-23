@@ -30,6 +30,29 @@ jobs:
           done
           echo "all seeds match"
 
+  frontend:
+    name: Front end smoke test + screenshots (PC)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pillow
+      - name: Build main.c against stand-in hardware (strict C89)
+        working-directory: neogeo-cd
+        run: sh test/build_frontend.sh build-pc
+      - name: Play the tour script and render screenshots
+        working-directory: neogeo-cd
+        run: |
+          mkdir -p shots
+          build-pc/frontend test/tour.txt shots
+          python3 test/render_frames.py shots --sheet shots/00_sheet.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CalmCombo-screenshots
+          path: neogeo-cd/shots/*.png
+
   assets:
     name: Asset check
     runs-on: ubuntu-latest

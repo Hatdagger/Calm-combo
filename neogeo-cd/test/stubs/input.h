@@ -1,8 +1,9 @@
-#define P1_EDGE 0x10fd97
-#define P1_REPEAT 0x10fd98
-#define P2_EDGE 0x10fd9d
-#define P2_REPEAT 0x10fd9e
-#define PS_EDGE 0x10fdad
+extern unsigned char stub_in[8];
+#define P1_EDGE   ((unsigned long)&stub_in[0])
+#define P1_REPEAT ((unsigned long)&stub_in[1])
+#define P2_EDGE   ((unsigned long)&stub_in[2])
+#define P2_REPEAT ((unsigned long)&stub_in[3])
+#define PS_EDGE   ((unsigned long)&stub_in[4])
 #define JOY_UP 0x01
 #define JOY_DOWN 0x02
 #define JOY_LEFT 0x04
