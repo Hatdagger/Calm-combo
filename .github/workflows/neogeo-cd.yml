@@ -1,0 +1,57 @@
+name: Neo Geo CD build
+
+on:
+  push:
+    paths:
+      - 'neogeo-cd/**'
+      - 'web/index.html'
+      - '.github/workflows/neogeo-cd.yml'
+  workflow_dispatch:
+
+jobs:
+  rules-parity:
+    name: Board rules match the web prototype
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build PC harness (strict C89)
+        working-directory: neogeo-cd
+        run: gcc -std=c89 -pedantic -Wall -Wextra -Werror -O2 -o sim src/board.c test/sim.c
+      - name: Compare 25 seeded games
+        working-directory: neogeo-cd
+        run: |
+          for s in $(seq 1 20) 42 1234 99999 123456789 987654321; do
+            ./sim $s 80 > c.txt
+            node test/parity.js ../web/index.html $s 80 > j.txt
+            cmp c.txt j.txt || { echo "seed $s differs"; diff c.txt j.txt | head; exit 1; }
+          done
+          echo "all seeds match"
+
+  iso:
+    name: Build ISO + MAME CHD (NeoCore)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sprites, program, ISO and CHD
+        working-directory: neogeo-cd/src
+        shell: powershell
+        run: |
+          $bm = "..\neocore\toolchain\scripts\Builder-Manager.ps1"
+          foreach ($rule in @("sprite", "make", "dist:iso", "dist:mame")) {
+            Write-Host "=== mak $rule ===" -ForegroundColor Cyan
+            powershell -ExecutionPolicy Bypass -File $bm -ConfigFile project.xml -Rule $rule
+            if ($LASTEXITCODE -ne 0) { throw "mak $rule failed" }
+          }
+      - name: List output
+        if: always()
+        shell: powershell
+        run: |
+          if (Test-Path neogeo-cd\dist) { Get-ChildItem -Recurse neogeo-cd\dist | Select-Object FullName, Length }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CalmCombo-NeoGeoCD
+          path: neogeo-cd/dist/
+          if-no-files-found: error

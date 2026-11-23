@@ -1,0 +1,17 @@
+#define P1_EDGE 0x10fd97
+#define P1_REPEAT 0x10fd98
+#define P2_EDGE 0x10fd9d
+#define P2_REPEAT 0x10fd9e
+#define PS_EDGE 0x10fdad
+#define JOY_UP 0x01
+#define JOY_DOWN 0x02
+#define JOY_LEFT 0x04
+#define JOY_RIGHT 0x08
+#define JOY_A 0x10
+#define JOY_B 0x20
+#define JOY_C 0x40
+#define JOY_D 0x80
+#define P1_START 0x01
+#define P1_SELECT 0x02
+#define P2_START 0x04
+#define P2_SELECT 0x08

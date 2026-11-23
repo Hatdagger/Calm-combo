@@ -41,6 +41,5 @@ Planned order: **Neo Geo CD first**, then Windows, Linux, Android, Original Xbox
 ```
 web/        browser prototype (reference implementation of the rules)
 docs/       design doc
+neogeo-cd/  Neo Geo CD port (NeoCore), see neogeo-cd/README.md
 ```
-
-Port folders (e.g. `neogeo-cd/`) will be added as each port starts.
