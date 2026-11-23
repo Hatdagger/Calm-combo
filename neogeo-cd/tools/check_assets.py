@@ -50,7 +50,7 @@ def pixels(path):
         warn(path, 'unusual PNG mode %s, converted' % im.mode)
     return im.convert('RGBA')
 
-def check_image(rel, im, tile, frames, night_of=None):
+def check_image(rel, im, tile, frames, count=True):
     """Per-tile colour count, hard transparency, 5-bit colour. Returns unique tile count."""
     global total_tiles
     w, h = im.size
@@ -78,7 +78,7 @@ def check_image(rel, im, tile, frames, night_of=None):
         err(rel, '%d pixels are partly transparent; use fully opaque or fully transparent only' % soft)
     if off:
         warn(rel, '%d pixels use colour values that are not multiples of 8 (they will be rounded)' % off)
-    total_tiles += len(uniq) if tile == 16 else 0
+    total_tiles += len(uniq) if tile == 16 and count else 0
     return len(uniq)
 
 def check_night(rel, day, night):
@@ -116,7 +116,7 @@ for rel, (W, H, frames) in GFX.items():
     night = path[:-4] + '_night.png'
     if os.path.exists(night):
         nim = pixels(night)
-        check_image(rel[:-4] + '_night.png', nim, tile, frames)
+        check_image(rel[:-4] + '_night.png', nim, tile, frames, False)   # colours only: no sprite memory
         check_night(rel[:-4] + '_night.png', im, nim)
 
 if os.path.isdir(os.path.join(ROOT, 'gfx')):

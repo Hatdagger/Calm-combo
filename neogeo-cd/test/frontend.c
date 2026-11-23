@@ -202,7 +202,7 @@ static void dump(const char *name)
     for (k = 0; k < nlay; k++) fprintf(f, " %d%s", lay[k].spr, lay[k].d_shown ? "" : (lay[k].shown ? "!" : "-"));
     fprintf(f, "\n");
     for (k = 0; k < nreg; k++)
-        fprintf(f, "pmode %d %d %d\n", PAL_SCENE + reg[k].first, reg[k].p->count, reg[k].mode);
+        fprintf(f, "pmode %d %d %d %d\n", PAL_SCENE + reg[k].first, reg[k].p->count, reg[k].mode, reg[k].night);
     for (y = 2; y < 30; y++) {
         fprintf(f, "fix ");
         for (x = 0; x < 40; x++) fputc(fix_ch[x][y], f);

@@ -31,6 +31,9 @@ FILES = {1: ('logo.png', 2), 2: ('board/tiles.png', 7), 3: ('board/cursor.png', 
          17: ('window/city.png', 8), 18: ('window/rain.png', 4), 19: ('window/droplet.png', 2),
          20: ('window/frame.png', 14), 21: ('window/steam.png', 2)}
 ART = {k: load(f) for k, (f, h) in FILES.items()}
+# hand-painted night copies (tools/make_night.py turns them into colour tables)
+NIGHT = {k: load(f[:-4] + '_night.png') for k, (f, h) in FILES.items()
+         if os.path.exists(os.path.join(GFX, f[:-4] + '_night.png'))}
 HEIGHT = {k: h for k, (f, h) in FILES.items()}
 FONT = load('font/font.png')
 HI_PALS = (34, 35)                          # bright tile palettes (32 + 2 in the harness)
@@ -60,15 +63,20 @@ def tables(u, level):
     fd = [(c * level) >> 5 for c in range(32)]
     return t, fd
 
-def tint_tile(tile, mode, tabs, fd, n):
+def tint_tile(tile, mode, tabs, fd, n, ntile=None):
     out = tile.copy(); px = out.load()
+    npx = ntile.load() if ntile is not None else None
     e8 = lambda v: (v << 3) | (v >> 2)
     for y in range(out.size[1]):
         for x in range(out.size[0]):
             r, g, b, a = px[x, y]
             if not a: continue
             r, g, b = r >> 3, g >> 3, b >> 3
-            if mode == 1:
+            if npx is not None and n:
+                nr, ng_, nb, na = npx[x, y]
+                c = ((tabs[0][r] * (256 - n) + fd[nr >> 3] * n) >> 8, (tabs[1][g] * (256 - n) + fd[ng_ >> 3] * n) >> 8,
+                     (tabs[2][b] * (256 - n) + fd[nb >> 3] * n) >> 8)
+            elif mode == 1:
                 c = (fd[r], fd[g], fd[b])
             elif mode == 2 and (r, g, b) == (11, 12, 14):
                 c = ((tabs[0][r] * (256 - n) + fd[31] * n) >> 8, (tabs[1][g] * (256 - n) + fd[26] * n) >> 8,
@@ -108,9 +116,9 @@ def render(path):
     n = night_of(tint[0])
     cache = {}
     def mode_of(pal):
-        for first, count, mode in pmodes:
-            if first <= pal < first + count: return mode
-        return None
+        for first, count, mode, night in pmodes:
+            if first <= pal < first + count: return mode, night
+        return None, 0
     items = [(s, 'spr', (x, y, tl)) for s, x, y, tl in sprs] + [(p[1], 'pict', p) for p in picts]
     for _, kind, d in sorted(items, key=lambda i: i[0]):
         if kind == 'pict':
@@ -129,9 +137,12 @@ def render(path):
             tile = cache.get(key)
             if tile is None:
                 tile = ART[pid].crop((col * 16, row * 16, col * 16 + 16, row * 16 + 16))
-                mode = mode_of(a >> 8)
+                mode, night = mode_of(a >> 8)
+                ntile = None
+                if night and pid in NIGHT:
+                    ntile = NIGHT[pid].crop((col * 16, row * 16, col * 16 + 16, row * 16 + 16))
                 if pid == 2 and (a >> 8) in HI_PALS: tile = bright(tile)
-                elif mode is not None: tile = tint_tile(tile, mode, tabs, fd, n)
+                elif mode is not None: tile = tint_tile(tile, mode, tabs, fd, n, ntile)
                 cache[key] = tile
             ty = y + row_i * 16
             im.paste(tile, (x, ty), tile)

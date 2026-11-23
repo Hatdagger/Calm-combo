@@ -29,7 +29,14 @@ The three scenes now play behind the boards, built from the art in `src/assets/g
 
 Sprite budget: the busiest screen (Versus over the rain window at night) shows 80 sprites on one line (the limit is 96). Code: `src/scene.c`.
 
-Not yet: `<name>_night.png` recoloured copies are not used yet. Night is the automatic tint for now. In `window/city.png`, paint lit windows in **#586070** and they glow warm at night.
+### Night art
+Every scene picture can have a hand-painted night copy next to it, for example `lake/sky.png` → `lake/sky_night.png`. As night falls, the picture fades from its day colours into the night copy's colours, so at full night you see exactly what was painted. Dawn and sunset still use the automatic tint.
+
+- A night copy is the **same picture in different colours**: same size, the same pixels transparent, and each day colour turns into exactly one night colour. (Two areas that share a colour by day share one by night. If you want them different at night, give them slightly different day colours.)
+- It costs no sprite memory. `tools/make_night.py` turns each night copy into a small colour table (`src/night_maps.h`), and CI re-runs it on every push, so just upload the PNG.
+- Starter night copies are in the repo: moonlit blue outside, lit windows in the city, warm lamplight on the window frame and mug. Paint over them as you like. A picture without a night copy keeps the automatic tint, and the city's **#586070** windows still glow on their own there.
+- `python3 tools/make_night.py --samples` makes a starter copy for any picture that has none (it never overwrites one).
+- The sun, moon, fireflies and glitter are lights and never get a night copy.
 
 ### Milestone 2 (sprite board)
 - Every tile is its own 16×16 sprite (tiles.png). When you slide a line, the tiles glide into place. A held tile lifts 2 px and brightens. Tiles a valid drop would clear pulse bright.
@@ -88,4 +95,4 @@ gcc -std=c89 -pedantic -Wall -O2 -o sim src/board.c test/sim.c
 
 ## Next milestones
 5. Test on real hardware: a burned CD-R or an SD loader.
-6. Later: use `_night.png` copies, survival pacing, hint ghost, tutorial, Puzzle mode, CPU Versus, high-score initials.
+6. Later: survival pacing, hint ghost, tutorial, Puzzle mode, CPU Versus, high-score initials.

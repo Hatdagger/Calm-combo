@@ -17,6 +17,13 @@
  * level.  Light sources (sun, moon, fireflies, glitter) only fade.  In the
  * city layer, the lit-window colour #586070 glows warm at night.
  *
+ * Night art: a picture with a hand-painted <name>_night.png has a colour
+ * table in night_maps.h (made by tools/make_night.py): day colour -> night
+ * colour.  As night falls each colour fades from its tinted day colour into
+ * its night colour, so at full night the scene shows the painted colours
+ * exactly.  The table is looked up once per palette entry when a scene is
+ * built (nightbuf), so the per-frame cost is one blend.
+ *
  * Strict C89: gcc 2.95, no // comments, declarations at the top of blocks.
  */
 #include <neocore.h>
@@ -49,7 +56,11 @@ typedef struct {
     short d_col, d_x, d_y;
 } Layer;
 
-typedef struct { const paletteInfo *p; BYTE first, mode; } PalReg;
+typedef struct { const paletteInfo *p; BYTE first, mode, night; } PalReg;
+typedef struct { const pictureInfo *pi; const WORD *map; WORD n; } NightMap;
+#include "night_maps.h"
+
+#define NO_NIGHT 0x8000
 
 static Layer  lay[MAX_LAYERS];
 static BYTE   nlay;
@@ -57,6 +68,7 @@ static WORD   next_spr;
 static PalReg reg[MAX_REG];
 static BYTE   nreg, npals;
 static WORD   palbuf[MAX_PALS * 16];
+static WORD   nightbuf[MAX_PALS * 16];   /* night colour per entry (r<<10|g<<5|b) or NO_NIGHT */
 static int    budget;
 
 static BYTE   cur = 0xff, phase, level;   /* phase: 0 steady, 1 fade out, 2 fade in */
@@ -92,14 +104,56 @@ static WORD mk(WORD r, WORD g, WORD b)
                   ((r >> 1) << 8) | ((g >> 1) << 4) | (b >> 1));
 }
 
-/* the palette slot for a picture's palettes, shared by every layer using it */
-static WORD pal_for(const paletteInfo *p, BYTE mode)
+/*
+ * The night colour for one day colour (5-bit r, g, b): an exact match in the
+ * sorted table, else the nearest one if it is close (in case the converter
+ * rounded the colour), else none.
+ */
+static WORD night_lookup(const NightMap *nm, WORD r, WORD g, WORD b)
 {
-    int k;
+    WORD want = (WORD)((r << 10) | (g << 5) | b), d, best = 0xffff, bv = NO_NIGHT, k;
+    int lo = 0, hi = (int)nm->n - 1, mid;
+    while (lo <= hi) {
+        mid = (lo + hi) >> 1;
+        if (nm->map[mid * 2] == want) return nm->map[mid * 2 + 1];
+        if (nm->map[mid * 2] < want) lo = mid + 1; else hi = mid - 1;
+    }
+    for (k = 0; k < nm->n; k++) {
+        WORD c = nm->map[k * 2], dr, dg, db;
+        dr = (WORD)(((c >> 10) & 31) > r ? ((c >> 10) & 31) - r : r - ((c >> 10) & 31));
+        dg = (WORD)(((c >> 5) & 31) > g ? ((c >> 5) & 31) - g : g - ((c >> 5) & 31));
+        db = (WORD)((c & 31) > b ? (c & 31) - b : b - (c & 31));
+        d = (WORD)(dr + dg + db);
+        if (d < best) { best = d; bv = nm->map[k * 2 + 1]; }
+    }
+    return best <= 3 ? bv : NO_NIGHT;
+}
+
+/* the palette slot for a picture's palettes, shared by every layer using it */
+static WORD pal_for(const pictureInfo *pi, BYTE mode)
+{
+    const paletteInfo *p = pi->palInfo;
+    const NightMap *nm = 0;
+    const WORD *src;
+    WORD *nb;
+    int k, e;
     for (k = 0; k < nreg; k++)
         if (reg[k].p == p) return (WORD)(PAL_SCENE + reg[k].first);
     if (nreg >= MAX_REG || npals + p->count > MAX_PALS) return PAL_SCENE;   /* out of room: share */
-    reg[nreg].p = p; reg[nreg].first = npals; reg[nreg].mode = mode;
+    reg[nreg].p = p; reg[nreg].first = npals; reg[nreg].mode = mode; reg[nreg].night = 0;
+    if (mode != M_GLOW)
+        for (k = 0; k < N_NIGHT_MAPS; k++)
+            if (NIGHT_MAPS[k].pi == pi) nm = &NIGHT_MAPS[k];
+    if (nm) {
+        reg[nreg].night = 1;
+        for (k = 0; k < p->count; k++) {
+            src = (const WORD *)p->data + k * 16;
+            nb = nightbuf + (npals + k) * 16;
+            nb[0] = NO_NIGHT;
+            for (e = 1; e < 16; e++)
+                nb[e] = night_lookup(nm, c5r(src[e]), c5g(src[e]), c5b(src[e]));
+        }
+    }
     nreg++;
     npals = (BYTE)(npals + p->count);
     return (WORD)(PAL_SCENE + reg[nreg - 1].first);
@@ -174,7 +228,7 @@ static void update_palettes(WORD u, BYTE all)
     static BYTE tl = 0xff;
     int k, p, e, k0, k1;
     WORD w, r, g, b, n = night_of(u), *out;
-    const WORD *src;
+    const WORD *src, *nsrc;
     if (u != tu || level != tl) { make_tables(u); tu = u; tl = level; }
     if (!nreg) return;
     if (all) { k0 = 0; k1 = nreg; }
@@ -183,13 +237,20 @@ static void update_palettes(WORD u, BYTE all)
         for (p = 0; p < reg[k].p->count; p++) {
             src = (const WORD *)reg[k].p->data + p * 16;
             out = palbuf + (reg[k].first + p) * 16;
+            nsrc = nightbuf + (reg[k].first + p) * 16;
             out[0] = src[0];
             for (e = 1; e < 16; e++) {
                 w = src[e];
                 r = c5r(w); g = c5g(w); b = c5b(w);
-                if (reg[k].mode == M_GLOW) {
+                if (reg[k].night && n && nsrc[e] != NO_NIGHT) {
+                    /* painted night art: tinted day colour -> night colour */
+                    w = nsrc[e];
+                    out[e] = mk((WORD)((TR[r] * (256 - n) + FD[(w >> 10) & 31] * n) >> 8),
+                                (WORD)((TG[g] * (256 - n) + FD[(w >> 5) & 31] * n) >> 8),
+                                (WORD)((TB[b] * (256 - n) + FD[w & 31] * n) >> 8));
+                } else if (reg[k].mode == M_GLOW) {
                     out[e] = mk(FD[r], FD[g], FD[b]);
-                } else if (reg[k].mode == M_LIGHTS && r == 11 && g == 12 && b == 14) {
+                } else if (reg[k].mode == M_LIGHTS && !reg[k].night && r == 11 && g == 12 && b == 14) {
                     /* a lit window: grey by day, warm glow at night */
                     out[e] = mk((WORD)((TR[r] * (256 - n) + FD[31] * n) >> 8),
                                 (WORD)((TG[g] * (256 - n) + FD[26] * n) >> 8),
@@ -219,7 +280,7 @@ static BYTE layer_new(const pictureInfo *pi, BYTE mode, short x, short y,
     int k;
     if (nlay >= MAX_LAYERS || next_spr + ncols > SPR_SCENE + SPR_SCENE_N) return 0xff;
     l = &lay[nlay];
-    l->pi = pi; l->spr = next_spr; l->pal = pal_for(pi->palInfo, mode);
+    l->pi = pi; l->spr = next_spr; l->pal = pal_for(pi, mode);
     l->ncols = ncols; l->fw = fw; l->h = h; l->srcw = srcw;
     l->frame = 0; l->shown = 1;
     l->x = x; l->y = y; l->scroll = 0;
