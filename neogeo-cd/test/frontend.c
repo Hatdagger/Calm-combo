@@ -429,7 +429,7 @@ void waitVBlank(void)
             sscanf(line, "%*s %d %63s", &pl, shot);
             solve_move(pl, shot[0] ? shot : 0);
         } else if (!strcmp(cmd, "state")) {
-            static const char *NAMES[] = { "JOIN", "IDLE", "PRE", "POP", "FALL", "SHUFFLE", "OVER", "RESULT",
+            static const char *NAMES[] = { "JOIN", "IDLE", "PRE", "POP", "FALL", "SHUFFLE", "OVER",
                                            "OFF", "SOLVED", "FAILED", "NAME" };
             char want[32];
             sscanf(line, "%*s %d %31s", &pl, want);

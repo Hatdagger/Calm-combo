@@ -34,26 +34,22 @@ Calm and relaxing. Peaceful scenery and chill music, "a whole vibe."
 - Extra moves for keeping the chain going: +1 for each cascade step after the first, +1 for a 4-match, +2 for a 5+-match.
 - Game over at 0 moves. Shared high score.
 
-**Versus:** both players start on the **identical field**, and refills come in the same order, so it's a fair race. Same survival rules otherwise.
-- Stones are sent to the opponent: 1 per cascade step after the first, 1 for a 4-match, 2 for a 5+-match, and 1 for a LEVER move.
-- Your own attacks cancel incoming stones first, Puyo-style.
-- Incoming stones land when your next move resolves, **or after 3 seconds anyway**, so you can't dodge them by waiting.
-- **Anti-stall:** you have 7 seconds per move. If the timer runs out you lose a move (shown as a timer bar under the moves count, with ticking in the last seconds). Because moves are your life bar, taking action is always better than waiting.
-- Stones never match, but they can be slid like any tile, and they break when a match clears next to them.
-- Whoever runs out of moves first loses.
+**No Versus (decided Nov 2026):** a head-to-head mode with stone attacks and a 7-second move timer was tried and removed. It added pressure the game is meant to take away, and playtesting showed side-by-side Score Attack was the favourite way to play together.
+
+**Stones** (Puzzle mode and lessons): they never match, but they can be slid like any tile, and they break when a match clears next to them.
 
 ## Controls
 - Neo Geo stick + buttons: A grab/drop, B cancel, C next scene, D music toggle, Start join/retry, Select menu.
 - Web prototype: two gamepads (X next scene, Y music), a split keyboard (1P WASD+F/G, 2P arrows+K/L, M music, N next scene, Esc menu), multi-touch so two players can share a tablet, and a tappable >> corner to skip scenes.
 
 ## Tuning knobs (prototype values)
-Start moves 15 · chain +1 · 4-match +1 · 5-match +2 · stone cap 20 on a board · VS move timer 7 s · stone delay 3 s.
+Start moves 15 · chain +1 · 4-match +1 · 5-match +2 · stone cap 20 on a board.
 
 ## Neo Geo CD port notes
 - A good fit for the hardware. The scenery is made of layered parallax backgrounds built from sprites, which is classic Neo Geo work. Animated pieces (palm fronds, waves, rain, droplets) are cheap sprite animation. The songs can be **CD audio tracks** played straight off the disc, the system's biggest strength. Sound effects and ambience loops run on the Z80 / ADPCM chip.
 - Load each scene's graphics at a scene change, hidden by the fade. The music keeps streaming from the CD.
 - Toolchain to confirm: ngdevkit (C on the 68000), tested in MAME, then a burned CD-R for real hardware.
-- The board logic is small integer work and ports directly. The float animations become fixed-point. The seeded random generator (for identical Versus fields) is integer-only already.
+- The board logic is small integer work and ports directly. The float animations become fixed-point. The seeded random generator is integer-only already.
 
 ## Name candidates considered
 Calm Combo (chosen for now), Drift, Lull, Tidepool, Slow Tide, Stillwater, Unwind, Nudge, Lever, Shift Lagoon, Drift Garden, Line Shift.
@@ -61,5 +57,4 @@ Calm Combo (chosen for now), Drift, Lull, Tidepool, Slow Tide, Stillwater, Unwin
 ## Later (not committed)
 - More scenes (city rooftop at night, snowy cabin, forest stream), each with its own song.
 - Hint ghost after idle. (The tutorial and Puzzle mode are now in the Neo Geo CD version.)
-- CPU opponent for solo Versus.
 - Initials entry on the high-score table, saved to the console's internal save memory (now in the Neo Geo CD version).

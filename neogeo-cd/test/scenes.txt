@@ -27,15 +27,13 @@ dump n07_fading_out
 wait 30
 dump n08_next_scene_fading_in
 # busiest case: two boards over the rain window at night
-p1 SELECT
-wait 4
-p1 D
-p1 A
+p2 START
+idle 2
 clock 1560
 wait 90
-dump n09_versus_window_night
+dump n09_two_boards_window_night
 # two boards over the beach (the wave is its own layer there)
 clock 330
 wait 90
-dump n10_versus_beach_night
+dump n10_two_boards_beach_night
 end

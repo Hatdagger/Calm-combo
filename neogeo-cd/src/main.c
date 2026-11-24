@@ -88,15 +88,15 @@ static const short BX0[2] = { 24, 168 };   /* board left, pixels */
 #define F_BUFFER   20             /* an A press while the board is busy is kept this long */
 #define FALL_MAX   9            /* fall speed cap, pixels per frame */
 
-enum { ST_JOIN, ST_IDLE, ST_PRE, ST_POP, ST_FALL, ST_SHUFFLE, ST_OVER, ST_RESULT,
+enum { ST_JOIN, ST_IDLE, ST_PRE, ST_POP, ST_FALL, ST_SHUFFLE, ST_OVER,
        ST_OFF,                    /* puzzle / lesson: this half shows the instructions */
        ST_SOLVED, ST_FAILED,      /* puzzle / lesson result */
        ST_NAME };                 /* entering initials for the high-score table */
-enum { MODE_SCORE, MODE_VS, MODE_PUZZLE, MODE_TUTOR };
+enum { MODE_SCORE, MODE_PUZZLE, MODE_TUTOR };
 #define IS_PUZZLE (mode >= MODE_PUZZLE)
 
 /* title menu */
-enum { MENU_SCORE, MENU_VS, MENU_PUZZLE, MENU_TUTOR, MENU_SCORES, MENU_N };
+enum { MENU_SCORE, MENU_PUZZLE, MENU_TUTOR, MENU_SCORES, MENU_N };
 
 /* one on-screen tile; the board maps each cell to one of these */
 typedef struct {
@@ -113,11 +113,10 @@ typedef struct {
     BYTE  held, hr, hc, axis, has_t, t;
     cc_matches pv;                /* preview of the held move */
     cc_step step;
-    WORD  timer, idle_t, stone_t, lock_t;
+    WORD  timer, lock_t;
     char  msg[17];
     WORD  msg_t;
     BYTE  msg_pal;
-    BYTE  win;                    /* versus result */
     cc_grid oid;                  /* which Obj sits in each cell */
     Obj   o[NCELL];
     short cux, cuy;               /* cursor sprite position */
@@ -632,19 +631,8 @@ static void draw_hud(Side *s)
     put(x, HUD_MOVES, PAL_TEXT, "MOVES");
     put_num(x + 6, HUD_MOVES, s->b.moves <= 3 ? PAL_BAD : PAL_GOOD,
             (DWORD)(s->b.moves < 0 ? 0 : s->b.moves), 2);
-    if (mode == MODE_VS) {
-        /* move timer: 7 pips that empty as time runs out */
-        int pips = 7 - s->idle_t / 60, k;
-        char bar[8];
-        for (k = 0; k < 7; k++) bar[k] = (char)(k < pips ? '=' : ' ');
-        bar[7] = 0;
-        put(x + 9, HUD_MOVES, pips <= 2 ? PAL_BAD : PAL_DIM, bar);
-        put(x, HUD_STONES, PAL_STONE, "STONES");
-        put_num(x + 7, HUD_STONES, s->b.pending ? PAL_BAD : PAL_DIM, (DWORD)s->b.pending, 2);
-    } else {
-        put(x, HUD_STONES, PAL_TEXT, "         ");
-        put(x + 9, HUD_MOVES, PAL_TEXT, "       ");
-    }
+    put(x, HUD_STONES, PAL_TEXT, "         ");
+    put(x + 9, HUD_MOVES, PAL_TEXT, "       ");
 }
 
 static const char NAME_CHARS[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ.! ";
@@ -687,9 +675,6 @@ static void draw_side(Side *s)
                                : (pz_idx + 1 < CC_NUM_PUZZLES ? "SOLVED!  A=NEXT " : "ALL SOLVED! A=OK"));
     } else if (s->state == ST_FAILED) {
         put(s->col0, STATUS_SROW, PAL_BAD, "TRY AGAIN!  A   ");
-    } else if (s->state == ST_RESULT) {
-        put(s->col0, STATUS_SROW, s->win ? PAL_GOOD : PAL_BAD,
-            s->win ? "WIN!   START=AGN" : "LOSE   START=AGN");
     } else {
         put(s->col0, STATUS_SROW, PAL_TEXT, "                ");
     }
@@ -708,8 +693,7 @@ static void side_begin(Side *s)
     s->state = ST_IDLE;
     s->held = 0; s->has_t = 0;
     s->cr = 3; s->cc = 3;
-    s->idle_t = 0; s->stone_t = 0; s->msg_t = 0; s->lock_t = 0; s->buf_a = 0;
-    s->win = 0;
+    s->msg_t = 0; s->lock_t = 0; s->buf_a = 0;
     s->rank = 0xff;
     clear_board_area(s);
     objs_reset(s);
@@ -740,13 +724,6 @@ static void reset_side(Side *s, BYTE i)
     s->msg_t = 0;
 }
 
-static void rematch(void)
-{
-    DWORD seed = fresh_seed();
-    start_side(&side[0], seed);
-    start_side(&side[1], seed);
-}
-
 /* puzzles open one at a time: every solved one in a row, plus the next */
 static BYTE pz_open(void)
 {
@@ -757,17 +734,17 @@ static BYTE pz_open(void)
 
 static void draw_title(void)
 {
-    static const char *ITEM[MENU_N] = { "SCORE ATTACK", "VERSUS      ", "PUZZLE  ", "HOW TO PLAY ", "HIGH SCORES " };
+    static const char *ITEM[MENU_N] = { "SCORE ATTACK", "PUZZLE  ", "HOW TO PLAY ", "HIGH SCORES " };
     int k;
     for (k = 0; k < MENU_N; k++) {
         put(11, 11 + k * 2, menu_sel == k ? PAL_P1 : PAL_DIM, menu_sel == k ? ">" : " ");
         put(13, 11 + k * 2, menu_sel == k ? PAL_P1 : PAL_DIM, ITEM[k]);
     }
     /* puzzle number: left / right picks among the open ones */
-    put(21, 15, PAL_DIM, pz_sel > 0 && menu_sel == MENU_PUZZLE ? "<" : " ");
-    put_2(22, 15, menu_sel == MENU_PUZZLE ? PAL_TEXT : PAL_DIM, pz_sel + 1);
-    put(24, 15, PAL_DIM, pz_sel < pz_open() && menu_sel == MENU_PUZZLE ? ">" : " ");
-    put(25, 15, PAL_GOOD, (pz_solved >> pz_sel) & 1 ? "*" : " ");
+    put(21, 11 + MENU_PUZZLE * 2, PAL_DIM, pz_sel > 0 && menu_sel == MENU_PUZZLE ? "<" : " ");
+    put_2(22, 11 + MENU_PUZZLE * 2, menu_sel == MENU_PUZZLE ? PAL_TEXT : PAL_DIM, pz_sel + 1);
+    put(24, 11 + MENU_PUZZLE * 2, PAL_DIM, pz_sel < pz_open() && menu_sel == MENU_PUZZLE ? ">" : " ");
+    put(25, 11 + MENU_PUZZLE * 2, PAL_GOOD, (pz_solved >> pz_sel) & 1 ? "*" : " ");
     put(8, 23, PAL_DIM, "A GRAB/DROP  B CANCEL");
     put(8, 25, PAL_DIM, "C NEXT SCENE D MUSIC");
 }
@@ -809,8 +786,7 @@ static void start_game(BYTE m, BYTE p)
     show_panels(1);
     reset_side(&side[0], 0);
     reset_side(&side[1], 1);
-    if (m == MODE_VS) rematch();
-    else if (m >= MODE_PUZZLE) {
+    if (m >= MODE_PUZZLE) {
         side[1 - p].state = ST_OFF;
         start_side_pz(&side[p]);
     }
@@ -819,12 +795,8 @@ static void start_game(BYTE m, BYTE p)
 
 static void end_side(Side *s)
 {
-    Side *o = &side[1 - s->i];
     s->held = 0;
-    if (mode == MODE_VS) {
-        s->state = ST_RESULT; s->win = 0; s->lock_t = F_LOCK;
-        o->state = ST_RESULT; o->win = 1; o->lock_t = F_LOCK; o->held = 0;
-    } else if (hs_rank((DWORD)s->b.score) >= 0) {
+    if (hs_rank((DWORD)s->b.score) >= 0) {
         s->state = ST_NAME; s->lock_t = F_LOCK;
         s->name[0] = s->name[1] = s->name[2] = 'A'; s->name[3] = 0;
         s->name_pos = 0;
@@ -901,7 +873,7 @@ static void note_best(Side *s)
 /* the cascade, one phase per call when its timer runs out */
 static void resolve_tick(Side *s)
 {
-    int gain, before;
+    int gain;
     if (s->timer) { s->timer--; return; }
     switch (s->state) {
     case ST_PRE:
@@ -920,13 +892,8 @@ static void resolve_tick(Side *s)
             puzzle_after_move(s);
             return;
         }
-        before = s->b.pending;
-        gain = cc_resolve_end(&s->b, mode == MODE_VS ? &side[1 - s->i].b : (cc_board *)0);
+        gain = cc_resolve_end(&s->b, (cc_board *)0);
         if (gain) { say(s, gain > 1 ? "+MOVES!" : "+1 MOVE", PAL_GOOD); sfx(s, SND_MOVES); }
-        if (mode == MODE_VS && before && !s->b.pending && cc_count_stones(&s->b)) {
-            say(s, "STONES!", PAL_STONE);
-            sfx(s, SND_STONES);
-        }
         note_best(s);
         if (s->b.moves <= 0) { end_side(s); return; }
         if (!cc_has_valid_move(&s->b.g)) {
@@ -951,35 +918,6 @@ static void resolve_tick(Side *s)
         cc_shuffle(&s->b);
         s->state = ST_IDLE;
         return;
-    }
-}
-
-static void vs_pressure(Side *s)
-{
-    if (s->state != ST_IDLE) return;
-    s->idle_t++;
-    /* the last 2.5 s of the move timer tick twice a second */
-    if (s->idle_t > CC_VS_IDLE_FRAMES - 150 && s->idle_t % 30 == 0 && s->idle_t < CC_VS_IDLE_FRAMES)
-        sfx(s, SND_TICK);
-    if (s->idle_t >= CC_VS_IDLE_FRAMES) {
-        s->idle_t = 0;
-        s->b.moves--;
-        say(s, "-1 MOVE", PAL_BAD);
-        sfx(s, SND_NO_MATCH);
-        if (s->b.moves <= 0) { end_side(s); return; }
-    }
-    if (s->b.pending > 0) {
-        if (++s->stone_t >= CC_STONE_DELAY_FRAMES) {
-            s->stone_t = 0;
-            cc_place_stones(&s->b, s->b.pending);
-            s->b.pending = 0;
-            s->held = 0;
-            say(s, "STONES!", PAL_STONE);
-            sfx(s, SND_STONES);
-            if (!cc_has_valid_move(&s->b.g)) cc_shuffle(&s->b);
-        }
-    } else {
-        s->stone_t = 0;
     }
 }
 
@@ -1015,7 +953,6 @@ static void drop(Side *s)
         cc_apply_move(&s->oid, s->hr, s->hc, s->axis, s->t);   /* tiles stay where they are */
         s->cr = (BYTE)fr; s->cc = (BYTE)fc;
         s->held = 0; s->has_t = 0;
-        s->idle_t = 0;
         s->state = ST_PRE; s->timer = F_PRE;
     } else {
         if (s->has_t) { say(s, "NO MATCH", PAL_BAD); sfx(s, SND_NO_MATCH); }   /* tiles glide back by themselves */
@@ -1030,15 +967,12 @@ static void side_input(Side *s, BYTE edge, BYTE rep, BYTE start)
     switch (s->state) {
     case ST_JOIN:
         if (start || (edge & JOY_A)) {
-            if (mode == MODE_VS) rematch(); else start_side(s, fresh_seed());
+            start_side(s, fresh_seed());
             sfx(s, SND_MENU);
         }
         return;
     case ST_OVER:
         if (!s->lock_t && (start || (edge & JOY_A))) { start_side(s, fresh_seed()); sfx(s, SND_MENU); }
-        return;
-    case ST_RESULT:
-        if (!s->lock_t && (start || (edge & JOY_A))) { rematch(); snd_play(SND_MENU, SND_CENTRE); }
         return;
     case ST_OFF:
         return;
@@ -1185,7 +1119,6 @@ int main(void)
                 snd_play(SND_MENU, SND_CENTRE);
                 switch (menu_sel) {
                 case MENU_SCORE:  start_game(MODE_SCORE, (BYTE)(go - 1)); break;
-                case MENU_VS:     start_game(MODE_VS, (BYTE)(go - 1)); break;
                 case MENU_PUZZLE: pz_idx = pz_sel; start_game(MODE_PUZZLE, (BYTE)(go - 1)); break;
                 case MENU_TUTOR:  pz_idx = 0; start_game(MODE_TUTOR, (BYTE)(go - 1)); break;
                 default:          show_scores = 1; clearFixLayer(); break;
@@ -1199,11 +1132,11 @@ int main(void)
 
         side_input(&side[0], e1, r1, (BYTE)(ps & P1_START));
         side_input(&side[1], e2, r2, (BYTE)(ps & P2_START));
+        if (in_title) continue;           /* the last puzzle or lesson went back to the menu */
 
         for (k = 0; k < 2; k++) {
             Side *s = &side[k];
             if (s->state >= ST_PRE && s->state <= ST_SHUFFLE) resolve_tick(s);
-            if (mode == MODE_VS) vs_pressure(s);
             if (s->msg_t) s->msg_t--;
             draw_side(s);
         }

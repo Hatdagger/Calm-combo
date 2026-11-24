@@ -28,26 +28,8 @@ auto 2 10_p2_held
 wait 6
 dump 11_p2_pop
 idle 2
-p1 SELECT
-wait 4
-p1 D
-p1 A
-wait 16
-idle 1
-dump 12_versus
-auto 1
-idle 1
-auto 2
-idle 2
-auto 1
-idle 1
-auto 2
-idle 2
-dump 13_versus_later
-# sound check: everything above, then let the versus move timer run out
+# sound check: everything above
 sounds menu grab clear_1 cdda
-wait 440
-sounds tick no_match
 # music off and back on (D)
 p1 D2
 wait 4

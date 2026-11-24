@@ -3,7 +3,9 @@
 Built with [NeoCore](https://github.com/David-Vandensteen/neocore), a Neo Geo CD kit using GCC 2.95 and DATlib (vendored in `neocore/`, MIT license).
 
 ## Status: milestone 5 (tutorial, Puzzle mode, high scores)
-The title menu now has five entries: **Score Attack**, **Versus**, **Puzzle**, **How to play** and **High scores**. Up/down picks one, A or Start begins. Whoever presses plays, so 2P starts a puzzle on the right-hand board.
+Versus has been removed (Nov 2026) to keep the game relaxing; two players still play Score Attack side by side.
+
+The title menu has four entries: **Score Attack**, **Puzzle**, **How to play** and **High scores**. Up/down picks one, A or Start begins. Whoever presses plays, so 2P starts a puzzle on the right-hand board.
 
 - **How to play:** four short lessons on one board, with the instructions on the other half of the screen. 1: slide a line into a match. 2: the lever (the tile you move doesn't need to be in the match). 3: chains (make a match that drops tiles into a second one, 3 tries). 4: stones (break both stones in 3 moves). A wrong move just resets the lesson. After lesson 4 it goes back to the menu.
 - **Puzzle mode:** 12 fixed boards. Break every stone within the move count shown (1 move for puzzle 1, then 2, then 3 from puzzle 6). The refills are fixed too, so every try plays out exactly the same way. Puzzles open one at a time. On the menu, left/right picks any open puzzle, and a **\*** marks the solved ones. **Start** during a puzzle starts it over. Bonus moves from combos don't count here: the move count is the move count.
@@ -16,7 +18,7 @@ The title menu now has five entries: **Score Attack**, **Versus**, **Puzzle**, *
 Every scene now has its song, and the board has its sound effects.
 
 - **Music:** the three songs are CD audio tracks 2–4 (lake, beach, rain window), each with its ambience mixed in: wind at the lake, a wave swell every 9 seconds at the shore (in step with the shoreline animation), heavy rain at the window. The track changes with the scene. **D** pauses and resumes it; if the scene changed while the music was off, the new scene's song starts instead.
-- **Sound effects:** 16 effects on the sound chip: grab, no match, the chain chimes (cascade steps 1–9, each one note higher), LEVER!, extra moves, stones landing, the last seconds of the Versus move timer, and the menu. When two people play, 1P sounds come from the left speaker and 2P from the right; one player alone is centred.
+- **Sound effects:** 16 effects on the sound chip: grab, no match, the chain chimes (cascade steps 1–9, each one note higher), LEVER!, extra moves, stones landing, a soft tick (name entry, puzzle picker) and the menu. When two people play, 1P sounds come from the left speaker and 2P from the right; one player alone is centred.
 - **Placeholders:** the songs and effects are rendered by `tools/make_audio.py` from the web prototype's own song data (same chords, tempos, form and melodies), so the disc sounds like the prototype. To use your own, see *Your own audio* below.
 - Code: `src/sound.c` (effect queue, CD track control) and the hooks in `src/main.c`.
 
@@ -37,7 +39,7 @@ The three scenes now play behind the boards, built from the art in `src/assets/g
 - **Scene changes:** every 5 minutes, or when you press C, the scene fades to black and the next one fades in. Every frame of every scene is loaded once at boot, so nothing loads during play. The change is spread over several frames so the board never stutters: the fade only dims colours that were already worked out, and while the screen is black the new scene is laid down a few layers per frame and its colours one picture per frame (the night colour tables are worked out once at boot). The fade-in starts when all of it is ready, a few frames later.
 - The tile panels are off (`USE_PANEL 0`) to leave sprites for the scenery. The tiles have their own dark plates.
 
-Sprite budget: the busiest screen (Versus over the rain window at night) shows 80 sprites on one line (the limit is 96). Code: `src/scene.c`.
+Sprite budget: the busiest screen (two boards over the rain window at night) shows 80 sprites on one line (the limit is 96). Code: `src/scene.c`.
 
 ### Animation
 Every loop now has enough in-between frames to move smoothly, and the last frame leads straight back into the first:
@@ -98,7 +100,7 @@ The first run downloads the compiler, MAME and Raine. `mak lib` (building the Ne
 Before `mak`, run `python ..\tools\make_audio.py` once to make the CD tracks (they are not stored in the repo because they are about 60 MB each). For `mak dist:iso`, also copy `assets\cdda\*.wav` into `..\build\CalmCombo\assets\cdda\`, because NeoCore reads them from there.
 
 ## Testing without the console
-`test/frontend.c` runs the real `main.c` (and `sound.c`) on a PC against stand-in hardware. Every sound command and CD track change is logged to `sounds.txt`, and the tour checks that the expected effects played. Scripts play the game (`test/tour.txt`: title, Score Attack, 2P drop-in, Versus; `test/scenes.txt`: every scene by day and night, a scene change and the busiest Versus screen; `test/modes.txt`: all four lessons, puzzles 1 and 2 including a failed try, and a high score with initials entry, checked against a fake backup memory) and snapshot the sprites and text, and `test/render_frames.py` draws those snapshots with the real art. It also fails if a frame would overflow DATlib's sprite list or a scanline goes over 96 sprites.
+`test/frontend.c` runs the real `main.c` (and `sound.c`) on a PC against stand-in hardware. Every sound command and CD track change is logged to `sounds.txt`, and the tour checks that the expected effects played. Scripts play the game (`test/tour.txt`: title, Score Attack, 2P drop-in; `test/scenes.txt`: every scene by day and night, a scene change and the busiest two-board screen; `test/modes.txt`: all four lessons, puzzles 1 and 2 including a failed try, and a high score with initials entry, checked against a fake backup memory) and snapshot the sprites and text, and `test/render_frames.py` draws those snapshots with the real art. It also fails if a frame would overflow DATlib's sprite list or a scanline goes over 96 sprites.
 
 ```
 sh test/build_frontend.sh
@@ -124,4 +126,4 @@ To make new puzzle boards (a few minutes): `gcc -std=c89 -O2 -Isrc -o pgen src/b
 
 ## Next milestones
 6. Test milestone 5 on real hardware, especially saving.
-7. Later: survival pacing, hint ghost, CPU Versus, more puzzles.
+7. Later: survival pacing, hint ghost, more puzzles.

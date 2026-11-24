@@ -21,7 +21,7 @@ typedef long           cc_s32;
 #define CC_COLS   8
 #define CC_ROWS   7
 #define CC_NC     6           /* tile colours 0..5 */
-#define CC_STONE  6           /* versus stone: never matches */
+#define CC_STONE  6           /* stone: never matches */
 
 /* tuning knobs (prototype values) */
 #define CC_START_MOVES  15
@@ -29,8 +29,6 @@ typedef long           cc_s32;
 #define CC_FOUR_MOVES   1
 #define CC_FIVE_MOVES   2
 #define CC_MAX_STONES   20
-#define CC_VS_IDLE_FRAMES     (7 * 60)   /* 7 s move timer at 60 fps   */
-#define CC_STONE_DELAY_FRAMES (3 * 60)   /* stones auto-land after 3 s */
 
 #define CC_AXIS_H 0
 #define CC_AXIS_V 1

@@ -32,7 +32,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;touch
 {
 /* ---------- config ---------- */
 const T=16, COLS=8, ROWS=7, NC=6, STONE=6, LW=320, LH=224;
-const CFG={startMoves:15, chainMoves:1, fourMoves:1, fiveMoves:2, maxStones:20, vsIdle:7, stoneDelay:3};
+const CFG={startMoves:15, chainMoves:1, fourMoves:1, fiveMoves:2, maxStones:20};
 const COLORS=['#ff8f87','#7cc4ff','#7fe0a8','#ffe08a','#c6a8ff','#ffb67c'];
 const DARK=['#c2585a','#4a8fcc','#4aa877','#c9a64e','#8d6fd0','#cc7f45'];
 const PCOL=['#ffe7a8','#a8ecff'];
@@ -318,9 +318,8 @@ function resize(){
 addEventListener('resize',resize);
 
 /* ---------- board model ---------- */
-function makeBoard(i,ox,oy){return {i,ox,oy,grid:[],state:'join',score:0,moves:0,drag:null,cursor:{r:3,c:3},floats:[],flash:0,pending:0,gen:0,result:'',inputMode:'pad',lockUntil:0}}
+function makeBoard(i,ox,oy){return {i,ox,oy,grid:[],state:'join',score:0,moves:0,drag:null,cursor:{r:3,c:3},floats:[],flash:0,pending:0,gen:0,inputMode:'pad',lockUntil:0}}
 const boards=[makeBoard(0,24,72),makeBoard(1,168,72)];
-const other=b=>boards[1-b.i];
 const rndB=b=>Math.floor(b.rng()*NC);
 const mk=(color,y,x)=>({id:nextId++,color,x,y,vy:0,falling:false,dying:false,die:0,pop:0});
 const colorsOf=b=>b.grid.map(r=>r.map(t=>t.color));
@@ -359,7 +358,7 @@ function fill(b){
 function startBoard(b,seed){
   const g=++b.gen;
   b.rng=mulberry32(seed==null?Math.floor(Math.random()*1e9):seed);
-  Object.assign(b,{score:0,moves:CFG.startMoves,pending:0,drag:null,floats:[],result:'',state:'busy',flash:0,idleT:0,stoneT:0});
+  Object.assign(b,{score:0,moves:CFG.startMoves,pending:0,drag:null,floats:[],state:'busy',flash:0});
   fill(b);
   setTimeout(()=>{if(b.gen===g&&b.state==='busy')b.state='idle'},500);
 }
@@ -368,9 +367,8 @@ function toTitle(){scene='title';boards.forEach(clearBoard)}
 function startGame(m,p){
   scene='game'; mode=m;
   boards.forEach(clearBoard);
-  if(m==='vs') rematch(); else startBoard(boards[p]);
+  startBoard(boards[p]);
 }
-function rematch(){const seed=Math.floor(Math.random()*1e9);startBoard(boards[0],seed);startBoard(boards[1],seed)}
 function saveBest(s){if(s>best){best=s;try{localStorage.setItem('lineshift-best',best)}catch(e){}}}
 function addFloat(b,x,y,text,col){b.floats.push({x,y,text,col,t:0})}
 
@@ -395,7 +393,7 @@ function commit(b){
   const fr=axis==='h'?r:t, fc=axis==='h'?t:c;
   const lever=!preview.hit[fr][fc];
   if(b.inputMode==='pad') b.cursor={r:fr,c:fc};
-  b.drag=null; b.moves--; b.idleT=0; resolve(b,lever);
+  b.drag=null; b.moves--; resolve(b,lever);
 }
 function heldPos(b){
   const d=b.drag;
@@ -415,20 +413,13 @@ function slotOf(b,r,c){
   return [c,r];
 }
 
-/* ---------- resolving: clears, chains, survival moves, versus stones ---------- */
+/* ---------- resolving: clears, chains, survival moves ---------- */
 function gravity(b){
   for(let c=0;c<COLS;c++){
     const keep=[]; for(let r=ROWS-1;r>=0;r--){const t=b.grid[r][c];if(!t.dying)keep.push(t)}
     let r=ROWS-1; for(const t of keep){if(t.y<r-0.01){t.falling=true;t.vy=0}b.grid[r--][c]=t}
     const n=r+1; for(let k=0;k<n;k++){const t=mk(rndB(b),k-n-0.3,c);t.falling=true;b.grid[k][c]=t}
   }
-}
-function placeStones(b,n){
-  let have=0; for(const row of b.grid) for(const t of row) if(t.color===STONE) have++;
-  n=Math.min(n,CFG.maxStones-have); if(n<=0) return;
-  const top=[],rest=[];
-  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){const t=b.grid[r][c];if(t.color!==STONE)(r<3?top:rest).push(t)}
-  for(const t of shuffleArr(top).concat(shuffleArr(rest)).slice(0,n)){t.color=STONE;t.pop=1}
 }
 function shuffleBoard(b){
   const cells=[]; for(const row of b.grid) for(const t of row) if(t.color!==STONE) cells.push(t);
@@ -441,7 +432,7 @@ function shuffleBoard(b){
 }
 async function resolve(b,lever){
   const g=b.gen; b.state='busy';
-  let chain=0, gain=0, attack=0;
+  let chain=0, gain=0;
   await sleep(110); if(b.gen!==g) return;
   for(;;){
     const m=findMatches(colorsOf(b)); if(!m.count) break;
@@ -449,10 +440,10 @@ async function resolve(b,lever){
     let pts=0;
     for(const n of m.groups){
       pts+=n*10+(n===4?30:n>=5?80:0);
-      if(n===4){gain+=CFG.fourMoves;attack+=1} else if(n>=5){gain+=CFG.fiveMoves;attack+=2}
+      if(n===4) gain+=CFG.fourMoves; else if(n>=5) gain+=CFG.fiveMoves;
     }
-    if(chain>=2){gain+=CFG.chainMoves;attack+=1}
-    const lv=chain===1&&lever; if(lv){pts+=50;attack+=1}
+    if(chain>=2) gain+=CFG.chainMoves;
+    const lv=chain===1&&lever; if(lv) pts+=50;
     pts*=chain; b.score+=pts;
     let sx=0,sy=0,n=0;
     for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)if(m.hit[r][c]){
@@ -467,50 +458,24 @@ async function resolve(b,lever){
     await sleep(300); if(b.gen!==g) return;
   }
   if(gain){b.moves+=gain;addFloat(b,COLS/2,ROWS/2+1,'+'+gain+(gain>1?' MOVES':' MOVE'),'#9ff0c0');sfx.moves(b.i)}
-  if(mode==='vs'){
-    if(attack){const cancel=Math.min(attack,b.pending);b.pending-=cancel;attack-=cancel;other(b).pending+=attack}
-    if(b.pending){placeStones(b,b.pending);b.pending=0;sfx.stones(b.i);await sleep(250);if(b.gen!==g)return}
-  }
   saveBest(b.score);
   if(b.moves<=0){endBoard(b);return}
   if(!hasValidMove(colorsOf(b))){addFloat(b,COLS/2,ROWS/2,'SHUFFLE!','#ffffff');await sleep(450);if(b.gen!==g)return;shuffleBoard(b)}
   b.state='idle';
 }
-function vsPressure(b,dt){
-  if(b.state!=='idle') return;
-  const before=b.idleT; b.idleT+=dt;
-  if(b.idleT>CFG.vsIdle-2.5&&Math.floor(b.idleT*2)!==Math.floor(before*2)) sfx.tick(b.i);
-  if(b.idleT>=CFG.vsIdle){
-    b.idleT=0; b.moves--; addFloat(b,COLS/2,ROWS/2,'-1 MOVE','#ffb0b8'); sfx.bad(b.i);
-    if(b.moves<=0){endBoard(b);return}
-  }
-  if(b.pending>0){
-    b.stoneT+=dt;
-    if(b.stoneT>=CFG.stoneDelay){
-      b.stoneT=0; placeStones(b,b.pending); b.pending=0; sfx.stones(b.i);
-      if(b.drag){b.drag=null}
-      if(!hasValidMove(colorsOf(b))) shuffleBoard(b);
-    }
-  }else b.stoneT=0;
-}
 function endBoard(b){
-  const lock=performance.now()+900;
-  if(mode==='vs'){
-    const o=other(b);
-    for(const x of [b,o]){x.gen++;x.state='result';x.drag=null;x.lockUntil=lock}
-    b.result='LOSE'; o.result='WIN';
-  }else{b.state='over';b.drag=null;b.lockUntil=lock}
+  b.state='over';b.drag=null;b.lockUntil=performance.now()+900;
 }
 
 /* ---------- pointer: mouse + multi-touch ---------- */
-const MENU_Y=[112,130];
+const MENU_Y=[118];
 function toLogical(e){const r=cv.getBoundingClientRect();return [(e.clientX-r.left)*LW/r.width,(e.clientY-r.top)*LH/r.height]}
 cv.addEventListener('pointerdown',e=>{
   ensureAudio();
   const [x,y]=toLogical(e);
   if(x>288&&y<18){nextScene();return}
   if(scene==='title'){
-    MENU_Y.forEach((my,i)=>{if(y>=my-5&&y<my+13&&x>70&&x<250){menuSel=i;startGame(i?'vs':'score',0)}});
+    MENU_Y.forEach((my,i)=>{if(y>=my-5&&y<my+13&&x>70&&x<250){menuSel=i;startGame('score',0)}});
     return;
   }
   const b=boards.find(q=>x>=q.ox-8&&x<q.ox+COLS*T+8&&y>=q.oy-34&&y<q.oy+ROWS*T+24);
@@ -519,7 +484,6 @@ cv.addEventListener('pointerdown',e=>{
   const ready=performance.now()>=b.lockUntil;
   if(b.state==='join'){startBoard(b);return}
   if(b.state==='over'){if(ready)startBoard(b);return}
-  if(b.state==='result'){if(ready)rematch();return}
   if(b.state!=='idle'||b.drag) return;
   const c=Math.floor((x-b.ox)/T), r=Math.floor((y-b.oy)/T);
   if(r<0||r>=ROWS||c<0||c>=COLS) return;
@@ -549,8 +513,7 @@ function input(p,k){
   if(k==='music'){setMusic(!musicOn);return}
   if(k==='scene'){nextScene();return}
   if(scene==='title'){
-    if(k==='up'||k==='down'){menuSel=1-menuSel;return}
-    if(k==='a'||k==='start') startGame(menuSel?'vs':'score',p);
+    if(k==='a'||k==='start') startGame('score',p);
     return;
   }
   if(k==='back'){toTitle();return}
@@ -558,7 +521,6 @@ function input(p,k){
   const ready=performance.now()>=b.lockUntil;
   if(b.state==='join'){if(k==='start'||k==='a')startBoard(b);return}
   if(b.state==='over'){if((k==='start'||k==='a')&&ready)startBoard(b);return}
-  if(b.state==='result'){if((k==='start'||k==='a')&&ready)rematch();return}
   if(k in DIRS){
     const [dr,dc]=DIRS[k], d=b.drag;
     if(!d){b.cursor={r:Math.max(0,Math.min(ROWS-1,b.cursor.r+dr)),c:Math.max(0,Math.min(COLS-1,b.cursor.c+dc))};return}
@@ -640,7 +602,7 @@ function drawTitle(){
   for(let i=0;i<word.length;i++) txt(word[i],80+i*16,28,COLORS[i%NC],16);
   txt('SLIDE  MATCH  UNWIND',160,52,'#e6dcff',8,'center');
   for(let i=0;i<7;i++) drawTile(i,160+(i-3)*20,82,1.15,false);
-  ['SCORE ATTACK','VERSUS'].forEach((s,i)=>{
+  ['SCORE ATTACK'].forEach((s,i)=>{
     const sel=menuSel===i;
     txt((sel?'> ':'  ')+s,160,MENU_Y[i],sel?'#ffd23f':'#cfc4e4',8,'center');
   });
@@ -659,16 +621,6 @@ function drawBoard(b){
   txt(live?String(b.score).padStart(7,'0'):'-------',X+BW,40,'#ffffff',8,'right');
   txt('MOVES',X,54,'#e6dcff');
   txt(live?String(Math.max(0,b.moves)):'--',X+BW,54,b.moves<=3?'#ff6b81':'#5fe39a',8,'right');
-  if(mode==='vs'&&(b.state==='idle'||b.state==='busy')){
-    const f=Math.max(0,1-b.idleT/CFG.vsIdle);
-    ctx.fillStyle='rgba(255,255,255,.15)'; ctx.fillRect(X,65,BW,2);
-    ctx.fillStyle=f<.35?'#ffb0b8':'#9ff0c0'; ctx.fillRect(X,65,Math.round(BW*f),2);
-  }
-  if(mode==='vs'&&b.pending>0&&(b.stoneT<CFG.stoneDelay-1||blink())){
-    const n=Math.min(b.pending,12);
-    for(let i=0;i<n;i++){ctx.fillStyle='#857c95';ctx.fillRect(X+i*9,Y+BH+8,7,7);ctx.fillStyle='#4d4659';ctx.fillRect(X+i*9+2,Y+BH+10,2,2)}
-    if(b.pending>12) txt('+'+(b.pending-12),X+BW,Y+BH+8,'#cfc4e4',8,'right');
-  }
   const d=b.drag;
   if(d){
     const moved=d.axis&&d.t!==dOrigin(d);
@@ -700,28 +652,23 @@ function drawBoard(b){
     const a=Math.max(0,1-f.t/1.2); ctx.globalAlpha=a;
     txt(f.text,X+f.x*T,Y+(f.y-f.t*.9)*T-4,f.col,8,'center'); ctx.globalAlpha=1;
   }
-  if(b.state==='join'||b.state==='over'||b.state==='result'){
+  if(b.state==='join'||b.state==='over'){
     ctx.fillStyle='rgba(10,8,24,.62)'; ctx.fillRect(X,Y,BW,BH);
     const mx=X+BW/2, ready=performance.now()>=b.lockUntil;
     if(b.state==='join'){
       if(blink()) txt('PRESS START',mx,Y+42,PCOL[b.i],8,'center');
       txt('OR TAP',mx,Y+58,'#a99bc4',8,'center');
-    }else if(b.state==='over'){
+    }else{
       txt('GAME OVER',mx,Y+28,'#ff6b81',8,'center');
       txt(String(b.score),mx,Y+46,'#ffd23f',16,'center');
       if(ready&&blink()) txt('A: RETRY',mx,Y+78,'#ffffff',8,'center');
-    }else{
-      txt(b.result,mx,Y+30,b.result==='WIN'?'#5fe39a':'#ff6b81',16,'center');
-      txt(String(b.score),mx,Y+56,'#ffd23f',8,'center');
-      if(ready&&blink()) txt('A: REMATCH',mx,Y+80,'#ffffff',8,'center');
     }
   }
 }
 function drawGame(){
   txt('CALM COMBO',160,6,'#ffffff',16,'center');
-  txt(mode==='vs'?'VERSUS':'SCORE ATTACK  HI '+best,160,26,'#e6dcff',8,'center');
+  txt('SCORE ATTACK  HI '+best,160,26,'#e6dcff',8,'center');
   boards.forEach(drawBoard);
-  if(mode==='vs') txt('VS',160,124,'#ff9af0',8,'center');
   txt('A GRAB B CANCEL Y MUSIC SEL MENU',160,212,'#e6dcff',8,'center');
 }
 
@@ -730,7 +677,6 @@ function frame(now){
   const dt=Math.min(.05,(now-last)/1000); last=now;
   pollPads(now);
   TM+=dt; updateAmbience();
-  if(scene==='game'&&mode==='vs') for(const b of boards) vsPressure(b,dt);
   const k=Math.min(1,dt*18);
   for(const b of boards){
     for(let r=0;r<b.grid.length;r++)for(let c=0;c<COLS;c++){

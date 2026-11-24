@@ -8,10 +8,11 @@ Grab **any** tile and slide it along its row or column. The whole line shifts wi
 
 ## Modes
 
-- **Score Attack:** relaxed survival. You start with 15 moves, and chain combos earn more. A second player can drop in at any time on the other half of the screen.
+- **Score Attack:** relaxed survival with no timer. You start with 15 moves, and chain combos earn more. A second player can drop in at any time on the other half of the screen.
 - **Puzzle (Neo Geo CD):** 12 fixed boards. Break every stone within a set number of moves.
 - **How to play (Neo Geo CD):** four short lessons: slide, lever, chains, stones.
-- **Versus:** both players start on an identical board. Combos send stone blocks to the other side, and there's a 7-second move timer so nobody can stall. Whoever runs out of moves first loses.
+
+There's no Versus mode on purpose. The game is about unwinding, and two people playing side by side on their own boards keeps it that way.
 
 ## Vibe
 

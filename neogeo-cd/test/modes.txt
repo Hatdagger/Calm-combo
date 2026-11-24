@@ -3,7 +3,6 @@ wait 20
 # title menu: down to HOW TO PLAY
 p1 D
 p1 D
-p1 D
 wait 2
 dump m01_menu
 p1 A
@@ -48,7 +47,7 @@ dump m08_lesson4_done
 wait 60
 p1 A
 wait 4
-# back on the title; puzzle 1 (menu: up twice from HOW TO PLAY)
+# back on the title; puzzle 1 (menu: up once from HOW TO PLAY)
 p1 U
 wait 2
 dump m09_menu_puzzle
@@ -84,7 +83,6 @@ state 1 SOLVED
 # Score Attack to a high score, then initials
 p1 SELECT
 wait 4
-p1 U
 p1 U
 wait 2
 p2 A
