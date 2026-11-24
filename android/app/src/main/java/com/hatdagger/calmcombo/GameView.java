@@ -33,6 +33,8 @@ public class GameView extends View implements Choreographer.FrameCallback {
     static native int nativeMusic();
     static native boolean nativeQuit();
     static native byte[] nativeSave();
+    static native void nativeMedia(int flags, String title);
+    static native int nativePopMedia();
 
     static final int CT_DOWN = 0, CT_MOVE = 1, CT_UP = 2, CT_CANCEL = 3;
     static final long TICK_NS = 1_000_000_000L / 60;
@@ -42,6 +44,7 @@ public class GameView extends View implements Choreographer.FrameCallback {
         void setMusic(int track);
         void store(byte[] save);
         void quit();
+        void mediaAction(int action);
     }
 
     private final Host host;
@@ -106,6 +109,7 @@ public class GameView extends View implements Choreographer.FrameCallback {
         }
         int s;
         while ((s = nativePopSound()) >= 0) host.playSound(s);
+        while ((s = nativePopMedia()) >= 0) host.mediaAction(s);
         int m = nativeMusic();
         if (m != music) { music = m; host.setMusic(m); }
         byte[] save = nativeSave();

@@ -46,6 +46,16 @@ int  calm_music(void);                   /* song wanted: 0 none, 1 lake, 2 beach
 int  calm_save(unsigned char *buf, int max);  /* > 0: the save changed, buf holds it */
 int  calm_quit(void);                    /* back pressed on the title: leave */
 
+/*
+ * The phone's own music (Android): a bar under the board with previous,
+ * play/pause, next and one line for the song.  The game only shows it and
+ * reports taps; the app talks to whatever player is running.
+ */
+enum { CM_PLAYING = 1, CM_TITLES = 2, CM_SESSION = 4 };     /* calm_media flags */
+enum { CMA_PREV, CMA_PLAY, CMA_NEXT, CMA_ASK };             /* calm_pop_media actions */
+void calm_media(int flags, const char *title);  /* title: plain ASCII; the first call shows the bar */
+int  calm_pop_media(void);               /* next tap on the bar, -1 none */
+
 #define CALM_SAVE_MAX 64
 
 #ifdef CALM_TEST

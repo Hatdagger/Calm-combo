@@ -180,6 +180,8 @@ static const uint8_t TCOL[T_NPAL][3] = {
     { 0x9f, 0xf0, 0xc0 }, { 0xff, 0xb0, 0xb8 }, { 0xff, 0xc2, 0xe8 }
 };
 
+int clip_x0 = 0, clip_x1 = 1 << 30;
+
 /* the font is drawn in three greys: main = colour, shade = 2/3, outline = 1/5 */
 void text(int x, int y, int pal, const char *s)
 {
@@ -198,7 +200,7 @@ void text(int x, int y, int pal, const char *s)
             for (i = 0; i < 8; i++) {
                 int xx = x + i;
                 uint32_t p;
-                if (xx < 0 || xx >= FW) continue;
+                if (xx < 0 || xx >= FW || xx < clip_x0 || xx >= clip_x1) continue;
                 p = font->px[(size_t)(gy + j) * font->w + gx + i];
                 if (!PX_A(p)) continue;
                 fb[(size_t)yy * FSTRIDE + xx] = PX_R(p) > 200 ? main : PX_R(p) > 100 ? shade : line;

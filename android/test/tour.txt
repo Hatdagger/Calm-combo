@@ -86,4 +86,39 @@ dump z01_short_phone
 size 196 420
 wait 2
 dump z02_tall_phone
+# the phone's music bar (a 20:9 phone: 180 x 396)
+size 180 396
+key SELECT
+wait 4
+media 0
+wait 2
+dump m01_title_no_titles
+tap 90 336
+mediatap ASK
+tap 90 160
+wait 60
+state IDLE
+wait 60
+media 7 Harbor Lights - The Quiet Tides
+wait 2
+dump m02_playing
+media 7 A Much Longer Song Title That Will Not Fit (Extended Version) - Someone
+wait 200
+dump m03_long_scrolling
+tap 46 355
+mediatap PREV
+tap 90 355
+mediatap PLAY
+tap 134 355
+mediatap NEXT
+media 6 Harbor Lights - The Quiet Tides
+wait 2
+dump m04_paused
+media 2
+key SELECT
+wait 4
+tap 50 182
+wait 60
+state IDLE
+dump m05_puzzle_nothing
 end

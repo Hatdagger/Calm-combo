@@ -73,7 +73,7 @@ static unsigned pz_solved;
 static int   save_due;
 
 /* layout, worked out on resize */
-static int W = 180, H = 320, BX, BY, HUD_Y, MSG_Y, INFO_Y, BTN_Y;
+static int W = 180, H = 320, BX, BY, HUD_Y, MSG_Y, INFO_Y, BTN_Y, MEDIA_Y, media_room;
 
 /* input */
 static int key_down[CK_COUNT], key_hold[CK_COUNT], key_edge[CK_COUNT], key_rep[CK_COUNT];
@@ -81,15 +81,22 @@ static int drag_on, drag_x0, drag_y0, drag_x, drag_y, drag_axis;   /* drag_axis 
 static int tap_btn = -1;                   /* button under a finger */
 static int tap_board;                      /* a tap began on the board */
 
+/* the phone's music bar */
+#define MEDIA_W 152
+#define MEDIA_H 36
+static int  media_on, media_flags, media_t;
+static char media_title[100];
+static int  mediaq[8], mq_r, mq_w;
+
 /* sounds for the platform */
 static int sndq[16], snd_r, snd_w;
 
 /* buttons drawn this frame, for touch */
 typedef struct { int x, y, w, h, id; } Btn;
-static Btn btn[16];
+static Btn btn[24];
 static int nbtn;
 enum { B_MUSIC = 1, B_SKIP, B_MENU, B_RETRY, B_ITEM0, B_PZ_PREV = B_ITEM0 + MENU_N, B_PZ_NEXT,
-       B_BACK, B_UP0, B_DN0 = B_UP0 + 3, B_OK = B_DN0 + 3 };
+       B_BACK, B_UP0, B_DN0 = B_UP0 + 3, B_OK = B_DN0 + 3, B_MPREV, B_MPLAY, B_MNEXT, B_MASK };
 
 static void sfx(int id)
 {
@@ -598,6 +605,11 @@ static void press(int id)
 {
     if (id == B_MUSIC) { music_on = !music_on; return; }
     if (id == B_SKIP)  { next_scene(); return; }
+    if (id >= B_MPREV && id <= B_MASK) {
+        int n = (mq_w + 1) & 7;
+        if (n != mq_r) { mediaq[mq_w] = CMA_PREV + (id - B_MPREV); mq_w = n; }
+        return;
+    }
     switch (screen) {
     case SCR_TITLE:
         if (id >= B_ITEM0 && id < B_ITEM0 + MENU_N) {
@@ -708,6 +720,7 @@ static void read_keys(void)
 void calm_tick(void)
 {
     frames++;
+    media_t++;
     seed_mix += (unsigned long)frames;
     read_keys();
     scenery_tick(frames, H);
@@ -735,7 +748,7 @@ static const Img *im_tiles, *im_cursor, *im_panel, *im_logo;
 
 static void add_btn(int x, int y, int w, int h, int id)
 {
-    if (nbtn >= 16) return;
+    if (nbtn >= 24) return;
     btn[nbtn].x = x; btn[nbtn].y = y; btn[nbtn].w = w; btn[nbtn].h = h; btn[nbtn].id = id;
     nbtn++;
 }
@@ -960,6 +973,75 @@ static void draw_scores(void)
     button(cx - 32, BTN_Y, 64, "BACK", T_TEXT, B_BACK);
 }
 
+/* the phone's music: an outline, one line for the song, |< > >| */
+static void media_icon(int cx, int cy, int which, int lit)
+{
+    uint32_t c = lit ? PX(0xff, 0xe7, 0xa8) : PX(0xf3, 0xec, 0xff), sh = PX(0x30, 0x24, 0x48);
+    int pass, k;
+    for (pass = 0; pass < 2; pass++) {           /* a dark shadow one pixel down, then the icon */
+        int y = cy + (pass ? 0 : 1);
+        uint32_t col = pass ? c : sh;
+        switch (which) {
+        case 0:                                  /* previous: bar and a left triangle */
+            fill(cx - 4, y - 4, 2, 9, col);
+            for (k = 0; k < 5; k++) fill(cx - 1 + k, y - k, 1, k * 2 + 1, col);
+            break;
+        case 1:                                  /* play: a right triangle */
+            for (k = 0; k < 5; k++) fill(cx - 2 + k, y - 4 + k, 1, 9 - k * 2, col);
+            break;
+        case 2:                                  /* pause: two bars */
+            fill(cx - 3, y - 4, 2, 9, col);
+            fill(cx + 1, y - 4, 2, 9, col);
+            break;
+        default:                                 /* next: a right triangle and a bar */
+            for (k = 0; k < 5; k++) fill(cx - 4 + k, y - 4 + k, 1, 9 - k * 2, col);
+            fill(cx + 2, y - 4, 2, 9, col);
+            break;
+        }
+    }
+}
+
+static void draw_media(void)
+{
+    int x = W / 2 - MEDIA_W / 2, y = MEDIA_Y, cx = W / 2, iy = y + 25, tx = x + 6, inner = MEDIA_W - 12;
+    int playing = media_flags & CM_PLAYING, pal, tw, k;
+    const char *s;
+    uint32_t edge = PX(0xf3, 0xec, 0xff);
+    if (!media_on || !media_room) return;
+    fill_alpha(x + 1, y + 1, MEDIA_W - 2, MEDIA_H - 2, PX(14, 10, 28), 110);   /* faint, so the song reads on any scene */
+    fill_alpha(x, y, MEDIA_W, 1, edge, 90);
+    fill_alpha(x, y + MEDIA_H - 1, MEDIA_W, 1, edge, 90);
+    fill_alpha(x, y + 1, 1, MEDIA_H - 2, edge, 90);
+    fill_alpha(x + MEDIA_W - 1, y + 1, 1, MEDIA_H - 2, edge, 90);
+
+    if (!(media_flags & CM_TITLES)) {
+        s = "SHOW SONG TITLES"; pal = T_DIM;
+        add_btn(x, y - 2, MEDIA_W, 16, B_MASK);
+    } else if (!(media_flags & CM_SESSION)) {
+        s = "NOTHING PLAYING"; pal = T_DIM;
+    } else {
+        s = media_title[0] ? media_title : playing ? "PLAYING" : "PAUSED";
+        pal = playing ? T_TEXT : T_DIM;
+    }
+    tw = text_w(s);
+    clip_x0 = tx; clip_x1 = tx + inner;
+    if (tw <= inner) {
+        text_c(cx, y + 6, pal, s);
+    } else {                                     /* too long: rest, then drift left and round again */
+        int gap = 40, loop = tw + gap, hold = 150, ph = media_t % (hold + loop * 3);
+        int off = ph < hold ? 0 : (ph - hold) / 3;
+        text(tx - off, y + 6, pal, s);
+        text(tx - off + loop, y + 6, pal, s);
+    }
+    clip_x0 = 0; clip_x1 = 1 << 30;
+
+    for (k = 0; k < 3; k++) {
+        int bx = cx + (k - 1) * 44, id = B_MPREV + k;
+        media_icon(bx, iy, k == 0 ? 0 : k == 2 ? 3 : playing ? 2 : 1, tap_btn == id);
+        add_btn(bx - 22, iy - 11, 44, 22, id);
+    }
+}
+
 void calm_render(uint32_t *px, int stride_px)
 {
     fb = px; FW = W; FH = H; FSTRIDE = stride_px;
@@ -971,6 +1053,7 @@ void calm_render(uint32_t *px, int stride_px)
     case SCR_SCORES: draw_scores(); break;
     default:         draw_game(); break;
     }
+    draw_media();
 }
 
 /* ---------- platform ---------- */
@@ -997,6 +1080,9 @@ void calm_resize(int w, int h)
     INFO_Y = MSG_Y + 40;
     BTN_Y = H - 24;
     if (INFO_Y + PZ_LINES * 10 > BTN_Y - 4) INFO_Y = BTN_Y - 4 - PZ_LINES * 10;
+    /* the music bar sits above MENU, only where it clears the puzzle notes */
+    MEDIA_Y = BTN_Y - 6 - MEDIA_H;
+    media_room = MEDIA_Y >= INFO_Y + PZ_LINES * 10 + 2;
 }
 
 int calm_init(const void *pak, long pak_len, const void *save, int save_len)
@@ -1027,6 +1113,26 @@ int calm_save(unsigned char *buf, int max)
     if (!save_due || max < SAVE_LEN) return 0;
     save_due = 0;
     return save_write(buf);
+}
+
+void calm_media(int flags, const char *title)
+{
+    media_on = 1;
+    media_flags = flags;
+    if (!title) title = "";
+    if (strncmp(title, media_title, sizeof media_title - 1)) {
+        strncpy(media_title, title, sizeof media_title - 1);
+        media_title[sizeof media_title - 1] = 0;
+        media_t = 0;                             /* a new song starts from its first letter */
+    }
+}
+
+int calm_pop_media(void)
+{
+    int a;
+    if (mq_r == mq_w) return -1;
+    a = mediaq[mq_r]; mq_r = (mq_r + 1) & 7;
+    return a;
 }
 
 int calm_quit(void) { int q = want_quit; want_quit = 0; return q; }

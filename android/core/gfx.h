@@ -50,5 +50,6 @@ void text(int x, int y, int pal, const char *s);
 void text_c(int cx, int y, int pal, const char *s);   /* centred on cx */
 void text_r(int rx, int y, int pal, const char *s);   /* right edge at rx */
 int  text_w(const char *s);
+extern int clip_x0, clip_x1;   /* text is only drawn between these columns */
 
 #endif

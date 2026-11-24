@@ -121,6 +121,16 @@ int main(int argc, char **argv)
         else if (sscanf(line, "set %d %d", &n1, &n2) == 2) calm_test_set(n1, n2);
         else if (sscanf(line, "clock %d", &n1) == 1) calm_test_clock(n1);
         else if (sscanf(line, "dump %63s", b2) == 1) dump(argv[3], b2);
+        else if (sscanf(line, "media %d", &n1) == 1) {
+            char *t = strchr(line + 6, ' ');
+            if (t) { t++; t[strcspn(t, "\n")] = 0; } else t = "";
+            calm_media(n1, t);
+        }
+        else if (sscanf(line, "mediatap %63s", a) == 1) {
+            int want = !strcmp(a, "PREV") ? CMA_PREV : !strcmp(a, "PLAY") ? CMA_PLAY : !strcmp(a, "NEXT") ? CMA_NEXT : CMA_ASK;
+            int got = calm_pop_media();
+            if (got != want) { printf("FAIL: media tap %d, wanted %d\n", got, want); fails++; }
+        }
         else if (!strncmp(line, "end", 3)) break;
         else { fprintf(stderr, "bad line: %s", line); return 1; }
     }

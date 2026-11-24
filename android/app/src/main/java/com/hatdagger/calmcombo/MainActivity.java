@@ -1,11 +1,23 @@
 package com.hatdagger.calmcombo;
 
 import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Intent;
 import android.content.res.AssetFileDescriptor;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.MediaMetadata;
 import android.media.MediaPlayer;
 import android.media.SoundPool;
+import android.media.session.MediaController;
+import android.media.session.MediaSessionManager;
+import android.media.session.PlaybackState;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.provider.Settings;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -20,6 +32,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.text.Normalizer;
+import java.util.List;
 
 /** Calm Combo for Android: full screen, portrait, one board. */
 public class MainActivity extends Activity implements GameView.Host {
@@ -36,8 +50,18 @@ public class MainActivity extends Activity implements GameView.Host {
     private SoundPool pool;
     private final int[] sfxId = new int[SFX.length];
     private MediaPlayer player;
-    private int track = 0;
+    private int track = 0, wantTrack = 0, failedTrack = -1;
     private boolean resumed = false;
+
+    /* the phone's own music, shown in the bar under the board */
+    private AudioManager am;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private MediaController ctl;               /* the other app's player, if we may see it */
+    private boolean access;                    /* notification access: song titles available */
+    private boolean extPlaying;                /* another app is playing: the game's songs stay quiet */
+    private boolean hasFocus, focusBlocked;    /* audio focus for the game's songs */
+    private long lastSfx, lastHeard, holdUntil;
+    private String mediaLine = "";
     private final boolean[] hat = new boolean[4];
 
     @Override
@@ -52,6 +76,7 @@ public class MainActivity extends Activity implements GameView.Host {
         }
         int r = GameView.nativeInit(pak, readSave());
         if (r != 0) { fail("The game data is damaged (" + r + ")."); return; }
+        am = (AudioManager) getSystemService(AUDIO_SERVICE);
         view = new GameView(this, this);
         setContentView(view);
         view.requestFocus();
@@ -118,19 +143,36 @@ public class MainActivity extends Activity implements GameView.Host {
 
     @Override
     public void playSound(int id) {
+        lastSfx = SystemClock.uptimeMillis();
         if (pool != null && id >= 0 && id < SFX.length && sfxId[id] != 0) pool.play(sfxId[id], 0.7f, 0.7f, 1, 0, 1f);
     }
 
     @Override
     public void setMusic(int t) {
-        if (t == 0) {
-            if (player != null) player.pause();
+        wantTrack = t;
+        applyMusic();
+    }
+
+    /* The game's song plays only while the game wants one and nothing else is playing. */
+    private void applyMusic() {
+        boolean play = resumed && wantTrack != 0 && !extPlaying && !focusBlocked;
+        if (!play) {
+            if (player != null && player.isPlaying()) player.pause();
+            if (!focusBlocked) abandonFocus();   /* a short interruption keeps its claim, so focus comes back */
             return;
         }
-        if (t == track && player != null) {
-            if (resumed) player.start();
-            return;
+        if (player == null || track != wantTrack) {
+            if (wantTrack == failedTrack) return;
+            loadTrack(wantTrack);
+            if (player == null) return;
         }
+        if (!player.isPlaying()) {
+            requestFocus();
+            if (hasFocus) player.start();
+        }
+    }
+
+    private void loadTrack(int t) {
         if (player != null) { player.release(); player = null; }
         track = t;
         try (AssetFileDescriptor fd = getAssets().openFd("music/track" + t + ".ogg")) {
@@ -142,9 +184,166 @@ public class MainActivity extends Activity implements GameView.Host {
             p.setVolume(0.8f, 0.8f);
             p.prepare();
             player = p;
-            if (resumed) p.start();
         } catch (IOException | RuntimeException e) {
             player = null;                       /* no music file: play on in silence */
+            failedTrack = t;
+        }
+    }
+
+    /* ---------- the phone's music: focus, the other player, the bar ---------- */
+
+    private final AudioManager.OnAudioFocusChangeListener focusListener = change -> {
+        long now = SystemClock.uptimeMillis();
+        if (change == AudioManager.AUDIOFOCUS_GAIN) {
+            focusBlocked = false;
+        } else if (change == AudioManager.AUDIOFOCUS_LOSS) {
+            hasFocus = false;                    /* another app started playing */
+            extPlaying = true;
+            lastHeard = now;
+            holdUntil = now + 1000;
+        } else {
+            focusBlocked = true;                 /* a call, an alarm, directions: wait for it to end */
+        }
+        applyMusic();
+        pushMedia();
+    };
+
+    @SuppressWarnings("deprecation")
+    private void requestFocus() {
+        if (hasFocus || am == null) return;
+        hasFocus = am.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+                == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+    }
+
+    @SuppressWarnings("deprecation")
+    private void abandonFocus() {
+        focusBlocked = false;
+        if (!hasFocus || am == null) return;
+        am.abandonAudioFocus(focusListener);
+        hasFocus = false;
+    }
+
+    private final Runnable poll = new Runnable() {
+        @Override
+        public void run() {
+            pollMedia();
+            if (resumed) handler.postDelayed(this, 500);
+        }
+    };
+
+    private static boolean isPlaying(MediaController c) {
+        PlaybackState st = c.getPlaybackState();
+        if (st == null) return false;
+        int s = st.getState();
+        return s == PlaybackState.STATE_PLAYING || s == PlaybackState.STATE_BUFFERING;
+    }
+
+    /* Look at the other player twice a second: what it plays, and whether it plays. */
+    private void pollMedia() {
+        long now = SystemClock.uptimeMillis();
+        MediaController c = null;
+        boolean ok;
+        try {
+            MediaSessionManager m = (MediaSessionManager) getSystemService(MEDIA_SESSION_SERVICE);
+            List<MediaController> list = m.getActiveSessions(new ComponentName(this, MediaListener.class));
+            ok = true;
+            for (MediaController x : list) {     /* the one playing, else the most recent */
+                if (getPackageName().equals(x.getPackageName())) continue;
+                if (c == null) c = x;
+                if (isPlaying(x)) { c = x; break; }
+            }
+        } catch (SecurityException | NullPointerException e) {
+            ok = false;                          /* no notification access: buttons still work */
+        }
+        access = ok;
+        ctl = c;
+        if (now >= holdUntil) {
+            if (access) {
+                extPlaying = ctl != null && isPlaying(ctl);
+            } else if (am != null && (player == null || !player.isPlaying()) && now - lastSfx > 1500) {
+                /* without access, listen: any music now that isn't the game's own effects or song */
+                if (am.isMusicActive()) { extPlaying = true; lastHeard = now; }
+                else if (extPlaying && now - lastHeard > 3000) extPlaying = false;
+            }
+        }
+        mediaLine = "";
+        if (ctl != null) {
+            MediaMetadata md = ctl.getMetadata();
+            if (md != null) {
+                String title = ascii(md.getString(MediaMetadata.METADATA_KEY_TITLE));
+                if (title.isEmpty()) title = ascii(md.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE));
+                String artist = ascii(md.getString(MediaMetadata.METADATA_KEY_ARTIST));
+                if (artist.isEmpty()) artist = ascii(md.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST));
+                mediaLine = title.isEmpty() ? artist : artist.isEmpty() ? title : title + " - " + artist;
+                if (mediaLine.length() > 96) mediaLine = mediaLine.substring(0, 96);
+            }
+        }
+        applyMusic();
+        pushMedia();
+    }
+
+    private void pushMedia() {
+        if (view == null) return;
+        int flags = (extPlaying ? 1 : 0) | (access ? 2 : 0) | (ctl != null ? 4 : 0);
+        GameView.nativeMedia(flags, mediaLine);
+    }
+
+    /* The game's font is plain ASCII: keep the letters, drop accents and what it can't draw. */
+    static String ascii(String s) {
+        if (s == null) return "";
+        s = s.replace('\u2018', '\'').replace('\u2019', '\'').replace('\u201C', '"').replace('\u201D', '"')
+                .replace('\u2013', '-').replace('\u2014', '-').replace("\u2026", "...");
+        s = Normalizer.normalize(s, Normalizer.Form.NFD);
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch >= 32 && ch < 127) b.append(ch);
+            else if (Character.isWhitespace(ch)) b.append(' ');
+        }
+        return b.toString().replaceAll(" +", " ").trim();
+    }
+
+    /* a tap on the bar: previous 0, play/pause 1, next 2, show song titles 3 */
+    @Override
+    public void mediaAction(int a) {
+        long now = SystemClock.uptimeMillis();
+        if (a == 3) { askAccess(); return; }
+        if (ctl != null) {
+            MediaController.TransportControls tc = ctl.getTransportControls();
+            if (a == 0) tc.skipToPrevious();
+            else if (a == 2) tc.skipToNext();
+            else if (isPlaying(ctl)) tc.pause();
+            else tc.play();
+        } else if (am != null) {
+            int code = a == 0 ? KeyEvent.KEYCODE_MEDIA_PREVIOUS : a == 2 ? KeyEvent.KEYCODE_MEDIA_NEXT
+                    : KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE;
+            am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
+            am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
+        }
+        /* show the change at once; the next looks confirm it */
+        extPlaying = a == 1 ? !extPlaying : true;
+        lastHeard = now;
+        holdUntil = now + 1200;
+        applyMusic();
+        pushMedia();
+    }
+
+    private void askAccess() {
+        String flat = new ComponentName(this, MediaListener.class).flattenToString();
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                Intent i = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS);
+                i.putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, flat);
+                startActivity(i);
+                return;
+            } catch (RuntimeException ignored) {
+                /* fall through to the list */
+            }
+        }
+        try {
+            startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+        } catch (RuntimeException ignored) {
+            /* no such screen on this device */
         }
     }
 
@@ -156,6 +355,9 @@ public class MainActivity extends Activity implements GameView.Host {
         super.onResume();
         resumed = true;
         hideBars();
+        pollMedia();                             /* music already playing on the phone stays on */
+        handler.removeCallbacks(poll);
+        handler.postDelayed(poll, 500);
         if (view != null) { view.forceMusic(); view.start(); }
     }
 
@@ -163,12 +365,16 @@ public class MainActivity extends Activity implements GameView.Host {
     protected void onPause() {
         resumed = false;
         if (view != null) view.stop();
+        handler.removeCallbacks(poll);
         if (player != null && player.isPlaying()) player.pause();
+        abandonFocus();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
+        handler.removeCallbacks(poll);
+        abandonFocus();
         if (player != null) { player.release(); player = null; }
         if (pool != null) { pool.release(); pool = null; }
         super.onDestroy();

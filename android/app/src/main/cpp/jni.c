@@ -71,3 +71,14 @@ JNIEXPORT jbyteArray JNICALL FN(nativeSave)(JNIEnv *env, jclass cls)
     if (a) (*env)->SetByteArrayRegion(env, a, 0, n, (const jbyte *)buf);
     return a;
 }
+
+JNIEXPORT void JNICALL FN(nativeMedia)(JNIEnv *env, jclass cls, jint flags, jstring title)
+{
+    const char *t = title ? (*env)->GetStringUTFChars(env, title, 0) : 0;
+    (void)cls;
+    calm_media(flags, t ? t : "");
+    if (t) (*env)->ReleaseStringUTFChars(env, title, t);
+}
+
+JNIEXPORT jint JNICALL FN(nativePopMedia)(JNIEnv *env, jclass cls)
+{ (void)env; (void)cls; return calm_pop_media(); }
