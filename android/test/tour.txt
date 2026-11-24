@@ -121,4 +121,21 @@ tap 50 182
 wait 60
 state IDLE
 dump m05_puzzle_nothing
+# a 16:9 phone: the full bar on the title and in Score Attack, the compact one in Puzzle
+size 180 320
+wait 2
+dump m06_short_puzzle
+tap 90 304
+mediatap PLAY
+key SELECT
+wait 4
+dump m07_short_title
+tap 90 128
+wait 60
+state IDLE
+dump m08_short_score
+# the tablet at the zoom it now picks (1600 x 2560 at 6x)
+size 266 426
+wait 2
+dump m09_tablet
 end

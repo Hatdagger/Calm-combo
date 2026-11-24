@@ -82,3 +82,6 @@ JNIEXPORT void JNICALL FN(nativeMedia)(JNIEnv *env, jclass cls, jint flags, jstr
 
 JNIEXPORT jint JNICALL FN(nativePopMedia)(JNIEnv *env, jclass cls)
 { (void)env; (void)cls; return calm_pop_media(); }
+
+JNIEXPORT jboolean JNICALL FN(nativeBarFits)(JNIEnv *env, jclass cls, jint w, jint h)
+{ (void)env; (void)cls; return calm_bar_fits(w, h) ? JNI_TRUE : JNI_FALSE; }

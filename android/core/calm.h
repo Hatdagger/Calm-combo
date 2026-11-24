@@ -54,7 +54,8 @@ int  calm_quit(void);                    /* back pressed on the title: leave */
 enum { CM_PLAYING = 1, CM_TITLES = 2, CM_SESSION = 4 };     /* calm_media flags */
 enum { CMA_PREV, CMA_PLAY, CMA_NEXT, CMA_ASK };             /* calm_pop_media actions */
 void calm_media(int flags, const char *title);  /* title: plain ASCII; the first call shows the bar */
-int  calm_pop_media(void);               /* next tap on the bar, -1 none */
+int  calm_pop_media(void);
+int  calm_bar_fits(int w, int h);        /* the full bar fits a screen this size (logical) */               /* next tap on the bar, -1 none */
 
 #define CALM_SAVE_MAX 64
 

@@ -35,6 +35,7 @@ public class GameView extends View implements Choreographer.FrameCallback {
     static native byte[] nativeSave();
     static native void nativeMedia(int flags, String title);
     static native int nativePopMedia();
+    static native boolean nativeBarFits(int w, int h);
 
     static final int CT_DOWN = 0, CT_MOVE = 1, CT_UP = 2, CT_CANCEL = 3;
     static final long TICK_NS = 1_000_000_000L / 60;
@@ -69,7 +70,7 @@ public class GameView extends View implements Choreographer.FrameCallback {
     @Override
     protected void onSizeChanged(int w, int h, int ow, int oh) {
         if (w <= 0 || h <= 0) return;
-        scale = nativePickScale(w, h);
+        scale = pickScale(w, h);
         int lw = Math.max(160, Math.min(400, w / scale));
         int lh = Math.max(280, Math.min(720, h / scale));
         bmp = Bitmap.createBitmap(lw, lh, Bitmap.Config.ARGB_8888);
@@ -78,6 +79,27 @@ public class GameView extends View implements Choreographer.FrameCallback {
         dst.set((w - dw) / 2, (h - dh) / 2, (w - dw) / 2 + dw, (h - dh) / 2 + dh);
         nativeRender(bmp);
     }
+
+    /*
+     * The biggest whole-number zoom, but on big sharp screens (tablets) step
+     * down a little if that makes room for the music bar, as long as a tile
+     * stays a comfortable size to touch (about 5.5 mm).
+     */
+    private int pickScale(int w, int h) {
+        int best = nativePickScale(w, h);
+        if (nativeBarFits(clampW(w / best), clampH(h / best))) return best;
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        float dpi = dm.xdpi > 100 && dm.xdpi < 1000 ? dm.xdpi : dm.densityDpi;
+        for (int s = best - 1; s >= 1; s--) {
+            if (16f * s / dpi * 25.4f < 5.5f) break;
+            if (w / s > 400 || h / s > 720) break;
+            if (nativeBarFits(clampW(w / s), clampH(h / s))) return s;
+        }
+        return best;
+    }
+
+    private static int clampW(int lw) { return Math.max(160, Math.min(400, lw)); }
+    private static int clampH(int lh) { return Math.max(280, Math.min(720, lh)); }
 
     void start() {
         if (running) return;

@@ -73,7 +73,7 @@ static unsigned pz_solved;
 static int   save_due;
 
 /* layout, worked out on resize */
-static int W = 180, H = 320, BX, BY, HUD_Y, MSG_Y, INFO_Y, BTN_Y, MEDIA_Y, media_room;
+static int W = 180, H = 320, BX, BY, HUD_Y, MSG_Y, INFO_Y, BTN_Y, MEDIA_Y, media_room, media_room_light;
 
 /* input */
 static int key_down[CK_COUNT], key_hold[CK_COUNT], key_edge[CK_COUNT], key_rep[CK_COUNT];
@@ -1001,18 +1001,44 @@ static void media_icon(int cx, int cy, int which, int lit)
     }
 }
 
+static void media_outline(int x, int y, int w, int h)
+{
+    uint32_t edge = PX(0xf3, 0xec, 0xff);
+    fill_alpha(x + 1, y + 1, w - 2, h - 2, PX(14, 10, 28), 110);   /* faint, so it reads on any scene */
+    fill_alpha(x, y, w, 1, edge, 90);
+    fill_alpha(x, y + h - 1, w, 1, edge, 90);
+    fill_alpha(x, y + 1, 1, h - 2, edge, 90);
+    fill_alpha(x + w - 1, y + 1, 1, h - 2, edge, 90);
+}
+
+/* short screens in Puzzle and How to play: just the three buttons, between MENU and RETRY */
+static void draw_media_compact(void)
+{
+    int cx = W / 2, gap = (W - 136) / 3, w, k;
+    if (gap > 22) gap = 22;
+    if (gap < 12) return;                        /* narrower than any phone: leave it out */
+    w = gap * 3;
+    media_outline(cx - w / 2, BTN_Y, w, 16);
+    for (k = 0; k < 3; k++) {
+        int bx = cx + (k - 1) * gap, id = B_MPREV + k;
+        media_icon(bx, BTN_Y + 8, k == 0 ? 0 : k == 2 ? 3 : (media_flags & CM_PLAYING) ? 2 : 1, tap_btn == id);
+        add_btn(bx - gap / 2, BTN_Y - 4, gap, 24, id);
+    }
+}
+
 static void draw_media(void)
 {
     int x = W / 2 - MEDIA_W / 2, y = MEDIA_Y, cx = W / 2, iy = y + 25, tx = x + 6, inner = MEDIA_W - 12;
     int playing = media_flags & CM_PLAYING, pal, tw, k;
     const char *s;
-    uint32_t edge = PX(0xf3, 0xec, 0xff);
-    if (!media_on || !media_room) return;
-    fill_alpha(x + 1, y + 1, MEDIA_W - 2, MEDIA_H - 2, PX(14, 10, 28), 110);   /* faint, so the song reads on any scene */
-    fill_alpha(x, y, MEDIA_W, 1, edge, 90);
-    fill_alpha(x, y + MEDIA_H - 1, MEDIA_W, 1, edge, 90);
-    fill_alpha(x, y + 1, 1, MEDIA_H - 2, edge, 90);
-    fill_alpha(x + MEDIA_W - 1, y + 1, 1, MEDIA_H - 2, edge, 90);
+    if (!media_on) return;
+    if (!media_room) {
+        /* the full bar still fits where there are no puzzle notes */
+        int notes = screen == SCR_GAME && mode != MODE_SCORE;
+        if (notes) { draw_media_compact(); return; }
+        if (!media_room_light) return;
+    }
+    media_outline(x, y, MEDIA_W, MEDIA_H);
 
     if (!(media_flags & CM_TITLES)) {
         s = "SHOW SONG TITLES"; pal = T_DIM;
@@ -1083,6 +1109,17 @@ void calm_resize(int w, int h)
     /* the music bar sits above MENU, only where it clears the puzzle notes */
     MEDIA_Y = BTN_Y - 6 - MEDIA_H;
     media_room = MEDIA_Y >= INFO_Y + PZ_LINES * 10 + 2;
+    /* without the notes: below Score Attack's messages and the title's BEST */
+    media_room_light = MEDIA_Y >= MSG_Y + 34 && MEDIA_Y >= H * 2 / 5 + MENU_N * 22 + 36;
+}
+
+int calm_bar_fits(int w, int h)
+{
+    int ow = W, oh = H, fits;
+    calm_resize(w, h);
+    fits = media_room;
+    calm_resize(ow, oh);
+    return fits;
 }
 
 int calm_init(const void *pak, long pak_len, const void *save, int save_len)
