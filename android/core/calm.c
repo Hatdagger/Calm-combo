@@ -76,7 +76,7 @@ static int   save_due;
 static int W = 180, H = 320, BX, BY, HUD_Y, MSG_Y, INFO_Y, BTN_Y;
 
 /* input */
-static int key_down[CK_COUNT], key_t[CK_COUNT], key_edge[CK_COUNT], key_rep[CK_COUNT];
+static int key_down[CK_COUNT], key_hold[CK_COUNT], key_edge[CK_COUNT], key_rep[CK_COUNT];
 static int drag_on, drag_x0, drag_y0, drag_x, drag_y, drag_axis;   /* drag_axis -1: not chosen */
 static int tap_btn = -1;                   /* button under a finger */
 static int tap_board;                      /* a tap began on the board */
@@ -696,10 +696,10 @@ static void read_keys(void)
     int k;
     for (k = 0; k < CK_COUNT; k++) {
         key_edge[k] = key_rep[k] = 0;
-        if (!key_down[k]) { key_t[k] = 0; continue; }
-        if (key_t[k] == 0) key_edge[k] = key_rep[k] = 1;
-        else if (key_t[k] >= 18 && (key_t[k] - 18) % 6 == 0) key_rep[k] = 1;
-        key_t[k]++;
+        if (!key_down[k]) { key_hold[k] = 0; continue; }
+        if (key_hold[k] == 0) key_edge[k] = key_rep[k] = 1;
+        else if (key_hold[k] >= 18 && (key_hold[k] - 18) % 6 == 0) key_rep[k] = 1;
+        key_hold[k]++;
     }
 }
 
