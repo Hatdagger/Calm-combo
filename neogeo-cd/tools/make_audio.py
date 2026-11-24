@@ -7,8 +7,8 @@
 What it makes, under src/assets/:
   cdda/track02_lakeside.wav  track03_shoreline.wav  track04_rain.wav
       The three scene songs, 44.1 kHz stereo, with the ambience mixed in.  They
-      are rendered from the same song data as web/index.html (chords, tempo,
-      32-bar form, motifs), so the disc sounds like the prototype.
+      are rendered from the song data of the original browser prototype (chords,
+      tempo, 32-bar form, motifs), kept below.
   sfx/*.wav
       The 16 sound effects at 18,500 Hz mono, again copying the prototype's
       synth sounds.

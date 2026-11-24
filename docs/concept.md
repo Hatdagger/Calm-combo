@@ -40,7 +40,7 @@ Calm and relaxing. Peaceful scenery and chill music, "a whole vibe."
 
 ## Controls
 - Neo Geo stick + buttons: A grab/drop, B cancel, C next scene, D music toggle, Start join/retry, Select menu.
-- Web prototype: two gamepads (X next scene, Y music), a split keyboard (1P WASD+F/G, 2P arrows+K/L, M music, N next scene, Esc menu), multi-touch so two players can share a tablet, and a tappable >> corner to skip scenes.
+- Android (portrait, one board): drag a tile and let go to drop it; MUSIC and >> buttons at the top; controllers use the Neo Geo layout (A grab/drop, B cancel, X next scene, Y music, Start, Select menu).
 
 ## Tuning knobs (prototype values)
 Start moves 15 · chain +1 · 4-match +1 · 5-match +2 · stone cap 20 on a board.

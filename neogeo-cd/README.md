@@ -19,7 +19,7 @@ Every scene now has its song, and the board has its sound effects.
 
 - **Music:** the three songs are CD audio tracks 2–4 (lake, beach, rain window), each with its ambience mixed in: wind at the lake, a wave swell every 9 seconds at the shore (in step with the shoreline animation), heavy rain at the window. The track changes with the scene. **D** pauses and resumes it; if the scene changed while the music was off, the new scene's song starts instead.
 - **Sound effects:** 16 effects on the sound chip: grab, no match, the chain chimes (cascade steps 1–9, each one note higher), LEVER!, extra moves, stones landing, a soft tick (name entry, puzzle picker) and the menu. When two people play, 1P sounds come from the left speaker and 2P from the right; one player alone is centred.
-- **Placeholders:** the songs and effects are rendered by `tools/make_audio.py` from the web prototype's own song data (same chords, tempos, form and melodies), so the disc sounds like the prototype. To use your own, see *Your own audio* below.
+- **Placeholders:** the songs and effects are rendered by `tools/make_audio.py` from the original browser prototype's song data (same chords, tempos, form and melodies). To use your own, see *Your own audio* below.
 - Code: `src/sound.c` (effect queue, CD track control) and the hooks in `src/main.c`.
 
 ### Your own audio
@@ -111,12 +111,7 @@ python3 test/render_frames.py shots --sheet shots/00_sheet.png
 GitHub runs this on every push and uploads the pictures as the `CalmCombo-screenshots` artifact. It checks the game logic and layout, not the real hardware, so a boot test is still needed.
 
 ## Board rules
-`src/board.c` / `board.h` hold the rules in plain C89 with no floats. `test/` checks them against `web/index.html`: the same seeded games give identical boards, refills, scores and move counts. This check also runs on every push.
-
-```
-gcc -std=c89 -pedantic -Wall -O2 -o sim src/board.c test/sim.c
-./sim 42 60 > c.txt && node test/parity.js ../web/index.html 42 60 > j.txt && cmp c.txt j.txt
-```
+`src/board.c` / `board.h` hold the rules in plain C89 with no floats. They are the reference implementation (the browser prototype they were checked against has been retired), and the Android version builds them unchanged.
 
 ## Toolchain notes (Nov 2026)
 - ngdevkit targets cartridges (AES/MVS) only, so it can't build a Neo Geo CD disc.

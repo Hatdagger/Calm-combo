@@ -18,31 +18,19 @@ There's no Versus mode on purpose. The game is about unwinding, and two people p
 
 Three scenes rotate every 5 minutes with a full day/night cycle: a mountain lake with a rising moon, a beach under an umbrella with a swaying palm and rolling waves, and rain on a window. Each scene has its own lo-fi song and matching ambience.
 
-## Play the prototype
+## Play it
 
-Open [`web/index.html`](web/index.html) in a browser. It's a single file with no build step. The prototype runs at the Neo Geo's native 320×224 resolution, scaled up.
-
-| | 1P | 2P |
-|---|---|---|
-| Move | WASD | Arrow keys |
-| Grab / drop | F or Space | K or Enter |
-| Cancel | G | L |
-| Join / retry | 1 | 2 |
-
-Other keys: **M** music on/off, **N** next scene, **Esc** menu.
-
-Controllers: the first pad is 1P and the second is 2P. A grabs/drops, B cancels, X skips to the next scene, Y toggles music, Start joins, Select goes to the menu.
-
-Touch and mouse: drag on your own side. Two people can share one tablet. Tap **>>** in the top-right corner to skip scenes.
+- **Neo Geo CD:** GitHub builds the disc image on every push. See [`neogeo-cd/README.md`](neogeo-cd/README.md).
+- **Android:** a portrait, one-board version with every mode. Download `CalmCombo.apk` from the [**Calm Combo for Android (latest)**](https://github.com/Hatdagger/calm-combo/releases/tag/android-latest) release on your phone or tablet and open it to install. See [`android/README.md`](android/README.md).
 
 ## Platforms
 
-Planned order: **Neo Geo CD first**, then Windows, Linux, Android, Original Xbox, Neo Geo AES/MVS and web. See [`docs/concept.md`](docs/concept.md) for the full design, tuning values and port notes.
+Done: **Neo Geo CD** and **Android**. Planned: Windows, Linux, Original Xbox, Neo Geo AES/MVS. (The browser prototype was retired in Nov 2026; the Neo Geo CD's `board.c` is now the reference for the rules.) See [`docs/concept.md`](docs/concept.md) for the full design, tuning values and port notes.
 
 ## Repo layout
 
 ```
-web/        browser prototype (reference implementation of the rules)
 docs/       design doc
-neogeo-cd/  Neo Geo CD port (NeoCore), see neogeo-cd/README.md
+neogeo-cd/  Neo Geo CD port (NeoCore) and the shared rules, see neogeo-cd/README.md
+android/    Android port (portrait, one board), see android/README.md
 ```

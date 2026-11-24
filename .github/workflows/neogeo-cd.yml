@@ -4,31 +4,18 @@ on:
   push:
     paths:
       - 'neogeo-cd/**'
-      - 'web/index.html'
       - '.github/workflows/neogeo-cd.yml'
   workflow_dispatch:
 
 jobs:
-  rules-parity:
-    name: Board rules match the web prototype
+  rules:
+    name: Board rules and puzzle boards
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Build PC harness (strict C89)
+      - name: Build the rules harness (strict C89)
         working-directory: neogeo-cd
-        run: gcc -std=c89 -pedantic -Wall -Wextra -Werror -O2 -o sim src/board.c test/sim.c
-      - name: Compare 25 seeded games
-        working-directory: neogeo-cd
-        run: |
-          for s in $(seq 1 20) 42 1234 99999 123456789 987654321; do
-            ./sim $s 80 > c.txt
-            node test/parity.js ../web/index.html $s 80 > j.txt
-            cmp c.txt j.txt || { echo "seed $s differs"; diff c.txt j.txt | head; exit 1; }
-          done
-          echo "all seeds match"
+        run: gcc -std=c89 -pedantic -Wall -Wextra -Werror -O2 -o sim src/board.c test/sim.c && ./sim 42 80 > /dev/null
       - name: Tutorial and Puzzle mode boards are solvable (and not in fewer moves)
         working-directory: neogeo-cd
         run: |

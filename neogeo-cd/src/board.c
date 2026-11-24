@@ -3,7 +3,7 @@
 
 #define M32(x) ((x) & 0xFFFFFFFFUL)
 
-/* ---------- random (mulberry32, bit-exact with the web prototype) ---------- */
+/* ---------- random (mulberry32, bit-exact with the original prototype) ---------- */
 
 static cc_u32 imul32(cc_u32 a, cc_u32 b)
 {

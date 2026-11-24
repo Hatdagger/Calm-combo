@@ -6,7 +6,8 @@
  * same file builds for Neo Geo CD (NeoDev GCC 2.95 or ngdevkit GCC 11) and
  * for a PC test harness.
  *
- * Rules mirror web/index.html, which stays the reference implementation.
+ * This file is the reference implementation of the rules.  The Neo Geo CD
+ * and Android versions both build it unchanged.
  */
 #ifndef CC_BOARD_H
 #define CC_BOARD_H

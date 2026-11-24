@@ -1,0 +1,7 @@
+.gradle/
+build/
+app/build/
+app/.cxx/
+local.properties
+# made by tools/prepare_assets.sh
+app/src/main/assets/

@@ -1,0 +1,89 @@
+# Calm Combo (Android): a play-through for screenshots and as a smoke test.
+size 180 360
+wait 40
+dump a01_title
+# Score Attack (menu item 1; rows are 22 px apart from 2/5 of the height)
+tap 90 144
+wait 60
+state IDLE
+dump a02_board
+auto
+wait 4
+dump a03_dragged
+idle
+dump a04_settled
+auto
+idle
+auto
+idle
+# a controller takes over: cursor shows
+key RIGHT
+key A
+key DOWN
+wait 3
+dump a05_pad_held
+key B
+# high score: force the last move
+set 4321 1
+auto
+idle
+wait 60
+state NAME
+dump a06_name_entry
+# OK button
+tap 90 183
+wait 4
+state OVER
+dump a07_game_over
+key SELECT
+wait 4
+state TITLE
+# How to play, lesson 1 (touch text)
+tap 90 188
+wait 60
+dump a08_lesson1
+auto
+idle
+wait 30
+dump a09_lesson_done
+key BACK
+wait 4
+# Puzzle 1
+tap 50 166
+wait 60
+dump a10_puzzle1
+# High scores
+key BACK
+tap 90 210
+wait 4
+state SCORES
+dump a11_scores
+key BACK
+# scenes by day and night
+clock 150
+wait 40
+dump s01_lake_day
+clock 1080
+wait 40
+dump s02_lake_night
+clock 1290
+wait 40
+dump s03_beach_morning
+clock 330
+wait 40
+dump s04_beach_night
+clock 840
+wait 40
+dump s05_window_day
+clock 1520
+wait 40
+dump s06_window_night
+# a short phone and a tall one
+size 180 320
+tap 90 128
+wait 60
+dump z01_short_phone
+size 196 420
+wait 2
+dump z02_tall_phone
+end

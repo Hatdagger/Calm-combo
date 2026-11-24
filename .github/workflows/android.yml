@@ -1,0 +1,75 @@
+name: Android build
+
+on:
+  push:
+    paths:
+      - 'android/**'
+      - 'neogeo-cd/src/**'
+      - 'neogeo-cd/tools/make_audio.py'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Play-through on PC + screenshots
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pillow
+      - name: Build the front end against the Neo Geo CD rules
+        run: sh android/test/build_pc.sh build-pc
+      - name: Play the tour
+        run: |
+          python3 android/tools/make_pak.py build-pc/calm.pak
+          mkdir -p shots
+          build-pc/calm-pc build-pc/calm.pak android/test/tour.txt shots
+          python3 android/test/shots.py shots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CalmCombo-android-screenshots
+          path: shots/*.png
+
+  apk:
+    name: Build the APK
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pillow numpy scipy
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Art, sound effects and songs into the app
+        run: sh android/tools/prepare_assets.sh
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Build
+        run: gradle -p android assembleRelease --no-daemon --stacktrace
+      - name: Name it
+        run: cp android/app/build/outputs/apk/release/app-release.apk CalmCombo.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CalmCombo-android
+          path: CalmCombo.apk
+      - name: Put it on the "Android (latest)" release page
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view android-latest >/dev/null 2>&1 || \
+            gh release create android-latest --prerelease --target "$GITHUB_SHA" \
+              --title "Calm Combo for Android (latest)" \
+              --notes "The newest Android build. On your phone or tablet, download CalmCombo.apk below and open it to install. Each new build installs over the old one and keeps your scores."
+          gh release upload android-latest CalmCombo.apk --clobber
